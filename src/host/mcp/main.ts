@@ -12,7 +12,7 @@
 
 import { realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+
 import { pathToFileURL } from 'node:url'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -20,7 +20,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { createToolHandlers, type ToolHandlers } from './tools.ts'
 import { TOOL_DEFINITIONS, definitionFor } from './definitions.ts'
 import { migrateMemoryRoot } from '../storage/migrate.ts'
-import { resolveDshHome } from '../storage/layout.ts'
+import { resolveDshHome, resolveStoreRoot } from '../storage/layout.ts'
 
 export interface ServerOptions {
   dshHome?: string
@@ -30,8 +30,10 @@ export interface ServerOptions {
 /** The root this server serves. Migrating one store and serving another is the
  * exact shape of the incident that made the store DSH_HOME-aware. */
 export function resolveServerRoot(opts: ServerOptions = {}): string {
-  if (opts.memoryDir) return opts.memoryDir
-  return join(opts.dshHome ?? resolveDshHome(), 'maestro-memory')
+  // `dshHome` is the test seam: it stands in for DSH_HOME so a caller can point the
+  // whole resolution at a scratch home without touching the real environment.
+  const env = opts.dshHome ? { ...process.env, DSH_HOME: opts.dshHome } : process.env
+  return resolveStoreRoot({ memoryDir: opts.memoryDir ?? null, env }).root
 }
 
 function packageVersion(): string {
@@ -52,10 +54,14 @@ function packageVersion(): string {
 /** Build the server without starting a transport, so tests can drive it directly. */
 export function createServer(opts: ServerOptions = {}): Server {
   const dshHome = opts.dshHome ?? resolveDshHome()
+  const resolved = resolveStoreRoot({
+    memoryDir: opts.memoryDir ?? null,
+    env: opts.dshHome ? { ...process.env, DSH_HOME: opts.dshHome } : process.env,
+  })
   // A store still on the pre-4.0 root must move BEFORE this process writes to it;
   // otherwise the first append creates the new root and the later DSH boot
   // migration finds both directories and refuses.
-  const migration = migrateMemoryRoot({ dshHome, memoryDir: opts.memoryDir ?? null })
+  const migration = migrateMemoryRoot({ root: resolved.root, mode: resolved.mode, dshHome })
   if (migration.status === 'refused' || migration.status === 'failed') {
     // stderr is the diagnostics channel for a stdio server. Silence here is how a
     // split store becomes "my old memory vanished in this client".
@@ -63,7 +69,7 @@ export function createServer(opts: ServerOptions = {}): Server {
       `[maestro-memory] store migration ${migration.status}: ${migration.reason} (from ${migration.from} to ${migration.to})`,
     )
   }
-  const root = resolveServerRoot({ dshHome, memoryDir: opts.memoryDir ?? null })
+  const root = resolved.root
   const handlers = createToolHandlers({ root })
 
   const server = new Server(

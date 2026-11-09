@@ -114,14 +114,15 @@ describe('mcp server process', () => {
   })
 
   it('reports a refused boot migration on stderr instead of serving silently', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'maestro-mcp-refuse-'))
-    // Both roots present: the migration refuses by design.
-    mkdirSync(join(home, 'dsh-maestro-memory'), { recursive: true })
-    mkdirSync(join(home, 'maestro-memory'), { recursive: true })
-    writeFileSync(join(home, 'dsh-maestro-memory', 'MEMORY.md'), 'old\n')
-    writeFileSync(join(home, 'maestro-memory', 'MEMORY.md'), 'new\n')
+    const root = mkdtempSync(join(tmpdir(), 'maestro-mcp-refuse-'))
+    const dshHome = join(root, '.dsh')
+    // Default mode (DSH_HOME is <tmp home>/.dsh) with both roots present: refusal.
+    mkdirSync(join(dshHome, 'dsh-maestro-memory'), { recursive: true })
+    mkdirSync(join(dshHome, 'maestro-memory'), { recursive: true })
+    writeFileSync(join(dshHome, 'dsh-maestro-memory', 'MEMORY.md'), 'old\n')
+    writeFileSync(join(dshHome, 'maestro-memory', 'MEMORY.md'), 'new\n')
     const child = spawn(process.execPath, ['--experimental-transform-types', join(process.cwd(), 'src/host/mcp/main.ts')], {
-      env: { ...process.env, DSH_HOME: home, NODE_NO_WARNINGS: '1' },
+      env: { ...process.env, HOME: root, DSH_HOME: dshHome, NODE_NO_WARNINGS: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let err = ''
@@ -134,7 +135,7 @@ describe('mcp server process', () => {
     } finally {
       child.stdin.end()
       await new Promise((resolve) => child.on('exit', resolve))
-      rmSync(home, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
     }
   }, 20_000)
 })
