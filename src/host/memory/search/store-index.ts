@@ -83,7 +83,7 @@ function syntheticId(text: string): string {
   return createHash('sha1').update(text).digest('hex').slice(0, 8)
 }
 
-function entryId(text: string): string {
+export function entryId(text: string): string {
   const match = ENTRY_ID_RE.exec(text)
   return match ? match[1]!.toLowerCase() : syntheticId(text)
 }
@@ -92,16 +92,17 @@ export function createStoreSearch(opts: StoreSearchOptions): StoreSearch {
   const maxEntries = opts.maxEntries ?? DEFAULT_MAX_ENTRIES
   let cached: { key: string; files: ScannedFile[]; index: SearchIndex; entries: IndexedEntry[] } | null = null
 
-  function collect(cwd: string | null, tracks?: readonly SearchTrack[]): { index: SearchIndex; entries: IndexedEntry[] } {
+  function collect(cwd: string | null): { index: SearchIndex; entries: IndexedEntry[] } {
     const files = defaultFiles(opts.root, cwd)
     const key = fingerprint(files)
+    // The cache holds the UNFILTERED index. Keying it on the file fingerprint alone
+    // used to hand a differently scoped query the previous query's track subset,
+    // which reads as "no match" for an entry that exists.
     if (cached && cached.key === key) return cached
 
     opts.onScan?.()
-    const wanted = tracks && tracks.length ? new Set(tracks) : null
     const entries: IndexedEntry[] = []
     for (const file of files) {
-      if (wanted && !wanted.has(file.track)) continue
       if (!existsSync(file.path)) continue
       let text = ''
       try {
@@ -131,13 +132,16 @@ export function createStoreSearch(opts: StoreSearchOptions): StoreSearch {
 
   return {
     query(text, queryOpts = {}) {
-      const { index } = collect(queryOpts.cwd ?? null, queryOpts.tracks)
+      const { index } = collect(queryOpts.cwd ?? null)
       return searchIndex(index, text, { limit: queryOpts.limit, tracks: queryOpts.tracks })
     },
     open(id, queryOpts = {}) {
-      const { entries } = collect(queryOpts.cwd ?? null, queryOpts.tracks)
+      const { entries } = collect(queryOpts.cwd ?? null)
       const wanted = String(id ?? '').toLowerCase()
-      return entries.find((entry) => entry.id === wanted)?.text ?? null
+      const wantedTracks = queryOpts.tracks && queryOpts.tracks.length ? new Set(queryOpts.tracks) : null
+      return (
+        entries.find((entry) => entry.id === wanted && (!wantedTracks || wantedTracks.has(entry.track)))?.text ?? null
+      )
     },
   }
 }

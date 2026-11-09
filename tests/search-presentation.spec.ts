@@ -24,6 +24,10 @@ describe('search presentation', () => {
     expect(formatHits([a, b]).split('\n')).toHaveLength(2)
   })
 
+  it('refuses an unknown track name instead of silently searching everything', () => {
+    expect(resolveTracks('keyx', true)).toEqual({ error: expect.stringMatching(/unknown track/i) })
+  })
+
   it('defaults to the curated tracks and refuses an explicit cwd-scoped request without cwd', () => {
     expect(resolveTracks(undefined, true)).toEqual(DEFAULT_TRACKS_WITH_CWD)
     expect(resolveTracks('key,project', false)).toEqual({ error: REFUSAL_CWD_REQUIRED })

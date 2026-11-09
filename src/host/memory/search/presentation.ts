@@ -44,10 +44,17 @@ export function resolveTracks(raw: string | undefined, hasCwd: boolean): SearchT
   if (raw === undefined || raw.trim() === '') {
     return hasCwd ? [...DEFAULT_TRACKS_WITH_CWD] : [...DEFAULT_TRACKS_WITHOUT_CWD]
   }
-  const wanted = raw
+  const requested = raw
     .split(',')
     .map((t) => t.trim().toLowerCase())
-    .filter((t): t is SearchTrack => (VALID_TRACKS as string[]).includes(t))
+    .filter(Boolean)
+  // A typo must not widen the search to everything: that reads as "found nothing"
+  // for a scoped query and as "found everything" for an unscoped one.
+  const unknown = requested.filter((t) => !(VALID_TRACKS as string[]).includes(t))
+  if (unknown.length) {
+    return { error: `unknown track: ${unknown.join(', ')} (expected ${VALID_TRACKS.join(', ')})` }
+  }
+  const wanted = requested as SearchTrack[]
   if (!wanted.length) return hasCwd ? [...DEFAULT_TRACKS_WITH_CWD] : [...DEFAULT_TRACKS_WITHOUT_CWD]
   if (!hasCwd && (wanted.includes('key') || wanted.includes('project'))) {
     return { error: REFUSAL_CWD_REQUIRED }
