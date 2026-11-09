@@ -1,6 +1,6 @@
 {
   "name": "@ddtcorex/maestro-memory",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "private": false,
   "packageManager": "pnpm@11.7.0",
   "description": "Durable layered memory (global / user / project / branch / daily), confirmation-gated writes, todos and skills. Agent-agnostic store, DSH plugin today.",
@@ -27,19 +27,20 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
-    "src",
-    "cordis.patch.yml",
-    "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "README.md",
+    "cordis.patch.yml",
+    "lib",
+    "src"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
     "verify": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "mcp": "node lib/mcp/main.js"
   },
   "dsh": {
     "bundle": {
@@ -54,17 +55,23 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.3.0-0",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.3.0-0",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || >=0.1.1-rc.0 <0.3.0-0",
     "react": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "typescript": "^6.0.3",
-    "vitest": "^3.2.4",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2"
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  },
+  "bin": {
+    "maestro-memory-mcp": "lib/mcp/main.js"
   }
 }

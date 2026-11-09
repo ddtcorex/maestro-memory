@@ -5,6 +5,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -35,10 +36,27 @@ export function resolveMemoryRoot(memoryDir: string | null | undefined): string 
   return join(resolveDshHome(), 'maestro-memory')
 }
 
-/** 12-hex project hash for a cwd (sha1(cwd).slice(0,12)) */
+/**
+ * The canonical form of a project directory: the real path when it exists.
+ *
+ * The bucket is `sha1(cwd)`, so without this an agent launched through a symlink
+ * writes to a different project than one launched on the real path, silently.
+ * A path that does not exist (a stale session header) falls back to the raw
+ * string rather than throwing.
+ */
+export function normalizeProjectCwd(cwd: string): string {
+  if (!cwd) return cwd
+  try {
+    return realpathSync.native(cwd)
+  } catch {
+    return cwd
+  }
+}
+
+/** 12-hex project hash for a cwd (sha1(realpath(cwd)).slice(0,12)) */
 export function projectHash(cwd: string): string {
   if (!cwd) throw new Error('projectHash: cwd is required')
-  return createHash('sha1').update(cwd).digest('hex').slice(0, 12)
+  return createHash('sha1').update(normalizeProjectCwd(cwd)).digest('hex').slice(0, 12)
 }
 
 /** Legacy alias — same as projectHash, explicit for spec compliance. */

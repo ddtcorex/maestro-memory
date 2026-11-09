@@ -8,6 +8,7 @@ import { MaestroMemoryStore } from './memory/store.ts'
 import type { MemoryAction } from './memory/store.ts'
 import { repairAllTracks } from './memory/repair-runner.ts'
 import { createStoreSearch } from './memory/search/store-index.ts'
+import { formatHit, resolveTracks, REFUSAL_NO_QUERY } from './memory/search/presentation.ts'
 import { planArchive, DEFAULT_ARCHIVE_POLICY } from './memory/maintenance.ts'
 import { applyBatch } from './memory/batch.ts'
 import { buildFeedbackLine } from './memory/feedback.ts'
@@ -376,36 +377,27 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         try {
           const cwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : null
           const id = typeof args.id === 'string' ? args.id.trim() : ''
-          const tracks = typeof args.tracks === 'string' && args.tracks.trim()
-            ? args.tracks.split(',').map((t: string) => t.trim()).filter(Boolean)
-            : undefined
+          const requested = typeof args.tracks === 'string' ? args.tracks : undefined
+          const tracks = resolveTracks(requested, cwd !== null)
+          if (!Array.isArray(tracks)) return { content: [{ type: 'text', text: tracks.error }] }
           if (id) {
             const body = search.open(id, { cwd, tracks })
             return { content: [{ type: 'text', text: body ?? `not found: ${id}` }] }
           }
           const query = typeof args.query === 'string' ? args.query.trim() : ''
-          if (!query) return { content: [{ type: 'text', text: 'query is required (or pass id to open one entry)' }] }
-          // An explicit request for a cwd-scoped track without a cwd is a caller
-          // mistake, so it is refused. The DEFAULT set simply skips those tracks
-          // and says so in the result, because the model usually just wants to
-          // find the entry and does not owe this tool a cwd.
-          if (tracks && !cwd && (tracks.includes('key') || tracks.includes('project'))) {
-            return { content: [{ type: 'text', text: 'cwd is required for the key and project tracks (pass cwd, or restrict tracks)' }] }
-          }
-          // Default scope: the curated tracks. `daily` is 2,381 of the 4,039
-          // live entries and is mostly turn noise, so it is opt-in: searching it
-          // by default tripled the first-query index build for little return.
-          const effectiveTracks = tracks ?? (cwd ? ['key', 'project', 'memory', 'user'] : ['memory', 'user'])
+          if (!query) return { content: [{ type: 'text', text: REFUSAL_NO_QUERY }] }
           const limit = Number.isFinite(Number(args.limit)) ? Number(args.limit) : undefined
-          const hits = search.query(query, { cwd, tracks: effectiveTracks, limit })
+          const hits = search.query(query, { cwd, tracks, limit })
           if (!hits.length) return { content: [{ type: 'text', text: `no match for ${JSON.stringify(query)}` }] }
           const lines = hits.map((hit) => {
-            const head = `${hit.id}  ${hit.track}  ${hit.date ?? '-'}  ${hit.score.toFixed(2)}  ${hit.preview}`
+            const head = formatHit(hit)
             if (args.full !== true) return head
             const body = search.open(hit.id, { cwd, tracks })
             return body ? `${head}\n${body}` : head
           })
-          if (!cwd && !tracks) lines.push('(searched memory, user and daily only; pass cwd to include key and project)')
+          if (!cwd && requested === undefined) {
+            lines.push('(searched memory and user only; pass cwd to include key and project)')
+          }
           return { content: [{ type: 'text', text: lines.join('\n') }] }
         } catch (e: any) {
           return { content: [{ type: 'text', text: `error: ${e?.message ?? String(e)}` }] }

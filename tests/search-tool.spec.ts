@@ -102,6 +102,12 @@ describe('the memory_search tool', () => {
     expect(missing).toMatch(/cwd/i)
   })
 
+  it('says which tracks it searched when no cwd was given', async () => {
+    await seed({ 'MEMORY.md': '[2026-09-01] [id:aaaaaaaa] shared word' })
+    const out = await run({ query: 'shared' })
+    expect(out).toContain('(searched memory and user only; pass cwd to include key and project)')
+  })
+
   it('says so when the query matches nothing', async () => {
     await seed({ 'MEMORY.md': '[2026-09-01] [id:aaaaaaaa] something else entirely' })
     const out = await run({ query: 'kubernetes' })
