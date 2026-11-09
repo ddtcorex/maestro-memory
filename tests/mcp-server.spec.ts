@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resolveServerRoot } from '../src/host/mcp/main.ts'
 
 /**
  * The one test that proves the transport works: a real process, the real protocol
@@ -62,6 +63,9 @@ describe('mcp server process', () => {
         'memory_add',
         'memory_suggest',
       ])
+      // The wire annotation is what a client uses to tell reads from writes.
+      expect(list.result.tools[0].annotations).toMatchObject({ readOnlyHint: true })
+      expect(list.result.tools[3].annotations).toMatchObject({ readOnlyHint: false })
 
       send({
         jsonrpc: '2.0',
@@ -78,4 +82,59 @@ describe('mcp server process', () => {
       expect(code).toBe(0)
     }
   }, 30_000)
+
+  it('starts when the entry is reached through a symlink, the way a bin install does', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maestro-mcp-bin-'))
+    const link = join(dir, 'maestro-memory-mcp')
+    symlinkSync(join(process.cwd(), 'src/host/mcp/main.ts'), link)
+    const child = spawn(process.execPath, ['--experimental-transform-types', link], {
+      env: { ...process.env, DSH_HOME: join(dir, 'home'), NODE_NO_WARNINGS: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let out = ''
+    child.stdout.on('data', (chunk) => { out += chunk.toString('utf8') })
+    try {
+      child.stdin.write(
+        `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } })}\n`,
+      )
+      for (let i = 0; i < 60 && !out.includes('protocolVersion'); i++) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      expect(out).toContain('protocolVersion')
+    } finally {
+      child.stdin.end()
+      await new Promise((resolve) => child.on('exit', resolve))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  it('serves the home it was told to use, not the one in the environment', () => {
+    expect(resolveServerRoot({ dshHome: '/tmp/probe-home-opt' })).toBe('/tmp/probe-home-opt/maestro-memory')
+    expect(resolveServerRoot({ dshHome: '/tmp/probe-home-opt', memoryDir: '/custom/dir' })).toBe('/custom/dir')
+  })
+
+  it('reports a refused boot migration on stderr instead of serving silently', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'maestro-mcp-refuse-'))
+    // Both roots present: the migration refuses by design.
+    mkdirSync(join(home, 'dsh-maestro-memory'), { recursive: true })
+    mkdirSync(join(home, 'maestro-memory'), { recursive: true })
+    writeFileSync(join(home, 'dsh-maestro-memory', 'MEMORY.md'), 'old\n')
+    writeFileSync(join(home, 'maestro-memory', 'MEMORY.md'), 'new\n')
+    const child = spawn(process.execPath, ['--experimental-transform-types', join(process.cwd(), 'src/host/mcp/main.ts')], {
+      env: { ...process.env, DSH_HOME: home, NODE_NO_WARNINGS: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let err = ''
+    child.stderr.on('data', (chunk) => { err += chunk.toString('utf8') })
+    try {
+      for (let i = 0; i < 60 && !err.includes('migration'); i++) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      expect(err).toMatch(/migration refused/i)
+    } finally {
+      child.stdin.end()
+      await new Promise((resolve) => child.on('exit', resolve))
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 20_000)
 })

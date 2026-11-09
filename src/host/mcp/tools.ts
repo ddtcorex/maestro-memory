@@ -9,8 +9,8 @@
  */
 
 import { MaestroMemoryStore } from '../memory/store.ts'
-import { createStoreSearch } from '../memory/search/store-index.ts'
-import { formatHit, resolveTracks, REFUSAL_NO_QUERY } from '../memory/search/presentation.ts'
+import { createStoreSearch, entryId } from '../memory/search/store-index.ts'
+import { formatHits, resolveTracks, REFUSAL_NO_QUERY, REFUSAL_CWD_REQUIRED } from '../memory/search/presentation.ts'
 import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
 import { SuggestionQueue, enqueueSuggestion } from '../review/queue.ts'
 import { suggestionsPath } from '../storage/layout.ts'
@@ -36,7 +36,6 @@ export interface HandlerOptions {
 const ADD_TARGETS = new Set(['memory', 'user', 'project', 'daily', 'key'])
 const KEY_GATE_MESSAGE =
   'key is gated — use memory_suggest target=key with reason (direct memory add for key is CLI-only)'
-const CID_REQUIRED = 'cwd is required for the project and key tracks'
 
 function asCwd(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -47,12 +46,24 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
   const search = createStoreSearch({ root: opts.root })
   const queue = opts.queue ?? new SuggestionQueue(suggestionsPath(opts.root))
 
+  /**
+   * Reads default to the process working directory.
+   *
+   * A foreign client usually passes no cwd, and the README tells it to call
+   * `memory_context` first. Falling back to the directory the server was started in
+   * is the difference between "this project has memory" and "this project is new".
+   * Writes stay strict: a wrong read is recoverable, a wrong write is not.
+   */
+  const readCwd = (value: unknown): string => asCwd(value) ?? process.cwd()
+
   /** Up to three existing entries that read like the one just written. */
-  function nearestNote(content: string, justAddedId: string): string {
+  function nearestNote(content: string, excludeId: string, cwd: string | null): string {
     try {
-      const hits = search.query(content.slice(0, 200), { cwd: null, tracks: ['memory', 'user'], limit: 3 })
-      const others = hits.filter((hit) => hit.id !== justAddedId)
-      return others.map(formatHit).join('\n')
+      // Include the key and project lanes when a cwd is available: those are the
+      // lanes the prompt can actually be crowded out of.
+      const tracks = cwd ? (['key', 'project', 'memory', 'user'] as const) : (['memory', 'user'] as const)
+      const hits = search.query(content.slice(0, 200), { cwd, tracks: [...tracks], limit: 4 })
+      return formatHits(hits.filter((hit) => hit.id !== excludeId).slice(0, 3))
     } catch {
       return ''
     }
@@ -60,8 +71,8 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
 
   return {
     search(args) {
-      const cwd = asCwd(args.cwd)
-      const tracks = resolveTracks(typeof args.tracks === 'string' ? args.tracks : undefined, cwd !== null)
+      const cwd = readCwd(args.cwd)
+      const tracks = resolveTracks(typeof args.tracks === 'string' ? args.tracks : undefined, true)
       if (!Array.isArray(tracks)) return { text: tracks.error }
       const id = typeof args.id === 'string' ? args.id.trim() : ''
       if (id) return { text: search.open(id, { cwd, tracks }) ?? `not found: ${id}` }
@@ -71,13 +82,19 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       const hits = search.query(query, { cwd, tracks, limit })
       if (!hits.length) return { text: `no match for ${JSON.stringify(query)}` }
       if (args.full === true) {
-        return { text: hits.map((hit) => `${formatHit(hit)}\n${search.open(hit.id, { cwd, tracks }) ?? ''}`).join('\n') }
+        const blocks = hits
+          .map((hit) => {
+            const body = search.open(hit.id, { cwd, tracks })
+            return body ? `${formatHits([hit])}\n${body}` : formatHits([hit])
+          })
+          .join('\n')
+        return { text: blocks }
       }
-      return { text: hits.map(formatHit).join('\n') }
+      return { text: formatHits(hits) }
     },
 
     context(args) {
-      const cwd = asCwd(args.cwd)
+      const cwd = readCwd(args.cwd)
       const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : undefined
       // No session fields on purpose: this text must never trigger the USER.md
       // bootstrap write that a DSH session performs on its first turn.
@@ -88,14 +105,13 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
     list(args) {
       const target = String(args.target ?? '').trim()
       if (!ADD_TARGETS.has(target)) return { text: `unknown target ${target}` }
-      const cwd = asCwd(args.cwd)
-      if ((target === 'project' || target === 'key') && !cwd) return { text: CID_REQUIRED }
+      const cwd = readCwd(args.cwd)
       const listOpts: Record<string, unknown> = {}
       if (typeof args.filter === 'string' && args.filter.trim()) listOpts.filter = args.filter.trim()
       if (Number.isFinite(Number(args.limit))) listOpts.limit = Number(args.limit)
       if (args.recent === true) listOpts.recent = true
       if (typeof args.date === 'string' && args.date.trim()) listOpts.date = args.date.trim()
-      const entries = store.list(target as any, cwd ?? undefined, listOpts as any)
+      const entries = store.list(target as any, cwd, listOpts as any)
       return { text: entries.length ? entries.join('\n---\n') : 'no entries' }
     },
 
@@ -108,21 +124,22 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       // A foreign agent never writes key directly: it goes through the same queue
       // a DSH model uses, so a human still approves the long-lived track.
       if (target === 'key') return { text: KEY_GATE_MESSAGE }
-      if (target === 'project' && !cwd) return { text: CID_REQUIRED }
+      if (target === 'project' && !cwd) return { text: REFUSAL_CWD_REQUIRED }
       const addOpts: Record<string, unknown> = {}
       if (typeof args.summary === 'string' && args.summary.trim()) addOpts.summary = args.summary.trim()
       if (typeof args.branches === 'string' && args.branches.trim()) addOpts.branches = args.branches.trim()
       if (typeof args.date === 'string' && args.date.trim()) addOpts.date = args.date.trim()
       const res = store.add(target as any, content, cwd ?? undefined, addOpts as any)
       if (!res.ok) return { text: `add failed: ${res.error}` }
-      if ((res as any).duplicate) return { text: 'duplicate: an identical entry already exists' }
-      const head = `added ${(res as any).id ?? ''}`.trim()
-      // add() dedupes only on an identical body, so several agents slowly collect
-      // variants of one rule until they crowd the text the prompt can show. Showing
-      // what already looks like it, at write time, is cheaper than a similarity gate
-      // and still lets the write through.
-      const similar = nearestNote(content, (res as any).id ?? '')
-      return { text: similar ? `${head}\nsimilar:\n${similar}` : head }
+      if (res.duplicate) {
+        // Name what it collided with: the caller can then open it instead of
+        // guessing which entry already exists.
+        const existing = nearestNote(content, '', cwd).split('\n')[0]?.trim()
+        return { text: existing ? `duplicate — not written; existing: ${existing}` : 'duplicate — not written' }
+      }
+      const id = entryId(res.entry ?? content)
+      const similar = nearestNote(content, id, cwd)
+      return { text: similar ? `added ${id}\nsimilar:\n${similar}` : `added ${id}` }
     },
 
     suggest(args) {
@@ -131,14 +148,19 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
       if (!content) return { text: 'empty content' }
       if (!reason) return { text: 'empty reason' }
+      const cwd = asCwd(args.cwd)
       // A key suggestion queued without a cwd is re-homed to the approver's own
       // session on approval, or fails forever, so it is refused up front.
-      if (target === 'key' && !asCwd(args.cwd)) {
-        return { text: 'cwd is required for a key suggestion (the entry belongs to a project)' }
+      if (target === 'key' && !cwd) {
+        return { text: REFUSAL_CWD_REQUIRED }
       }
-      const res = enqueueSuggestion(queue, target, content, reason)
+      // The queue reads the project from the caller's session header, so the cwd
+      // must travel with the suggestion or the approved entry lands in the wrong
+      // project.
+      const agent = cwd ? { session: { header: { cwd } } } : undefined
+      const res = enqueueSuggestion(queue, target, content, reason, agent)
       if (!res.ok) return { text: res.message ?? 'failed' }
-      return { text: (res as any).hits ? `queued (deduped hits=${(res as any).hits})` : `queued (${res.queued})` }
+      return { text: res.hits ? `queued (deduped hits=${res.hits})` : `queued (${res.queued})` }
     },
   }
 }
