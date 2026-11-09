@@ -1,5 +1,5 @@
 /**
- * dsh-maestro-memory — client entry (redesign 2026-08-29)
+ * maestro-memory — client entry (redesign 2026-08-29)
  * Uses maestro-design: Minimalism + Bento Grid, DSH tokens only, desktop+mobile.
  */
 import * as React from 'react'
@@ -7,10 +7,10 @@ import { coverageSummary, seriesText, shortPath } from './format.ts'
 
 export const inject = ['slots', 'sessions', 'connection'] as const
 
-const RPC_CHANNEL = '/dsh-maestro-memory'
+const RPC_CHANNEL = '/maestro-memory'
 
 // ── Design System Box ──────────────────────────────────────────────
-// TARGET: dsh-maestro-memory Memory Tab
+// TARGET: maestro-memory Memory Tab
 // PATTERN: Dashboard (Nav rail + Content bento)
 //   Sections: Header -> Nav (Memory | Queue | Todos | Skills | Health) -> Bento Cards
 // STYLE: Minimalism + Bento Grid + Flat
@@ -664,7 +664,7 @@ function HealthView({ ctx }: {ctx:any}): React.ReactElement {
       const conn=(ctx as any).connection ?? (ctx as any).get?.('connection')
       if(!conn?.rpc?.call) throw new Error('RPC not available')
       const cwd=(ctx as any)?.sessions?.list?.getSnapshot?.()?.byId?.[(ctx as any)?.sessions?.list?.getSnapshot?.()?.current]?.cwd || ''
-      const res:any=await conn.rpc.call('/dsh-maestro-memory-health','get',{cwd})
+      const res:any=await conn.rpc.call('/maestro-memory-health','get',{cwd})
       const val=res?.ok===true?res.value:res
       if(val && typeof val.project!=='undefined') setHealth(val); else bad(`unexpected: ${JSON.stringify(val).slice(0,120)}`)
     } catch(e:any){ bad(`load failed: ${e?.message??String(e)}`) } finally{ setLoading(false) }

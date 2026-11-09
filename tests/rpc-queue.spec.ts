@@ -85,8 +85,8 @@ describe('M2-PR-B gated memory_suggest and explicit RPC', () => {
     const ctx = fakeCtx(root)
     apply(ctx, { memoryDir: root })
 
-    expect(ctx.state.rpcTransportHandlers.has('/dsh-maestro-memory')).toBe(true)
-    const handler = ctx.state.rpcTransportHandlers.get('/dsh-maestro-memory')
+    expect(ctx.state.rpcTransportHandlers.has('/maestro-memory')).toBe(true)
+    const handler = ctx.state.rpcTransportHandlers.get('/maestro-memory')
     await expect(handler('queue.list', {})).resolves.toEqual({
       ok: true,
       value: { ok: true, entries: [] },
@@ -114,7 +114,7 @@ describe('M2-PR-B gated memory_suggest and explicit RPC', () => {
     const suggest = ctx.state.tools.find((t: any) => t.name === 'memory_suggest')
     const exec = { agent: { id: 'sess1', session: { header: { cwd: root } } } }
     await suggest.execute({ target: 'memory', content: 'original', reason: 'r' }, exec)
-    const handler = ctx.state.rpcHandlers.get('/dsh-maestro-memory')
+    const handler = ctx.state.rpcHandlers.get('/maestro-memory')
     expect(handler).toBeDefined()
     // approve with edit via RPC (explicit user click)
     const edited = { '1': 'edited content' }
@@ -138,7 +138,7 @@ describe('M2-PR-B gated memory_suggest and explicit RPC', () => {
     const exec = { agent: { id: 'sess1', session: { header: { cwd: root } } } }
     await suggest.execute({ target: 'user', content: 'to reject', reason: 'r' }, exec)
     await suggest.execute({ target: 'memory', content: 'to archive', reason: 'r2' }, exec)
-    const handler = ctx.state.rpcHandlers.get('/dsh-maestro-memory')
+    const handler = ctx.state.rpcHandlers.get('/maestro-memory')
     // reject via RPC
     let res = await handler('queue.decide', { action: 'reject', indices: [1] })
     expect(res.ok).toBe(true)
@@ -156,7 +156,7 @@ describe('M2-PR-B gated memory_suggest and explicit RPC', () => {
   it('queue.list RPC returns current queue', async () => {
     const ctx = fakeCtx(root)
     apply(ctx, { memoryDir: root })
-    const handler = ctx.state.rpcHandlers.get('/dsh-maestro-memory')
+    const handler = ctx.state.rpcHandlers.get('/maestro-memory')
     const q = new SuggestionQueue(suggestionsPath(root))
     q.append({ time: new Date().toISOString(), target: 'memory', content: 'a', reason: 'r' } as any)
     const res = await handler('queue.list', {})
@@ -170,7 +170,7 @@ describe('M2-PR-B gated memory_suggest and explicit RPC', () => {
     writeFileSync(file, 'bad json\n{"target":"memory","content":"good","reason":"r","time":"t"}\n', 'utf8')
     const ctx = fakeCtx(root)
     apply(ctx, { memoryDir: root })
-    const handler = ctx.state.rpcHandlers.get('/dsh-maestro-memory')
+    const handler = ctx.state.rpcHandlers.get('/maestro-memory')
     const res = await handler('queue.list', {})
     expect(res.entries.length).toBe(1)
     expect(res.entries[0].content).toBe('good')

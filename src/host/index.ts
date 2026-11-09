@@ -1,5 +1,5 @@
 /**
- * dsh-maestro-memory — host entry (M2-PR-B: confirmation queue, gated memory_suggest, RPC decide, Review UI)
+ * maestro-memory — host entry (M2-PR-B: confirmation queue, gated memory_suggest, RPC decide, Review UI)
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -473,7 +473,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
 
   // RPC channel for Review queue — explicit user-click decisions
   ctx.effect(() => {
-    const channel = '/dsh-maestro-memory'
+    const channel = '/maestro-memory'
     const rpcDate = (v: any) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)
     const legacyHandler = async (endpoint: string, payload: any) => {
       switch (endpoint) {
@@ -792,7 +792,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
   ctx.effect(() => {
     const conn2 = (ctx as any).connection ?? (ctx.get && ctx.get('connection'))
     if (!conn2?.rpc?.handle) return () => {}
-    const healthChannel = '/dsh-maestro-memory-health'
+    const healthChannel = '/maestro-memory-health'
     const healthHandler = async (_endpoint: string, payload: any) => {
       try {
         // Cost is a property of the renderer, not of any one project, so it is
@@ -876,7 +876,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
       if (r.ok) return { ok: true as const, value: r.value }
       return { ok: false as const, error: { message: r.error } }
     }
-    const d3 = conn3.rpc.handle('/dsh-maestro-memory-propose', wrapped)
+    const d3 = conn3.rpc.handle('/maestro-memory-propose', wrapped)
     return () => { if (typeof d3 === 'function') d3() }
   }, 'maestro-memory: propose')
 }

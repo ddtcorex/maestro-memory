@@ -70,7 +70,7 @@ const modules = order
   .join('\n')
 
 const wrapped = [
-  'window.__ModuleLoader__.load({ id: "@ddtcorex/dsh-maestro-memory", factory: (require) => {',
+  'window.__ModuleLoader__.load({ id: "@ddtcorex/maestro-memory", factory: (require) => {',
   'var __modules = {};',
   modules,
   'var __cache = {};',
