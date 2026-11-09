@@ -66,9 +66,9 @@ describe('layout', () => {
   it('honours DSH_HOME so a dry-boot or a test process cannot reach the live store', () => {
     const previous = process.env.DSH_HOME
     try {
-      process.env.DSH_HOME = '/tmp/isolated-dsh-home'
-      expect(resolveMemoryRoot(null)).toBe('/tmp/isolated-dsh-home/maestro-memory')
-      expect(resolveMemoryRoot(undefined)).toBe('/tmp/isolated-dsh-home/maestro-memory')
+      process.env.DSH_HOME = '/tmp/isolated-store'
+      expect(resolveMemoryRoot(null)).toBe('/tmp/isolated-store/maestro-memory')
+      expect(resolveMemoryRoot(undefined)).toBe('/tmp/isolated-store/maestro-memory')
       expect(resolveMemoryRoot('/custom')).toBe('/custom')
       process.env.DSH_HOME = '   '
       expect(resolveMemoryRoot(null)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
