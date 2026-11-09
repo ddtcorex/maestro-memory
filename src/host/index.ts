@@ -14,6 +14,7 @@ import { TodoStore, resolveQuadrant } from './todo/store.ts'
 import { TODO_TARGETS, TODO_STATUSES } from './storage/legacy-format.ts'
 import { SuggestionQueue, enqueueSuggestion, approveSuggestions, rejectSuggestions } from './review/queue.ts'
 import { resolveMemoryRoot, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
+import { migrateMemoryRoot, hasMigrationMarker } from './storage/migrate.ts'
 import { appendEntryAtomicSync } from './storage/atomic-store.ts'
 import { SyncService } from './sync/service.ts'
 import { RealGitAdapter } from './sync/git.ts'
@@ -99,6 +100,18 @@ const CONTENT_OUTPUT = {
 }
 
 export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
+  // Move the pre-4.0 store root before anything reads it, so no reader ever
+  // sees a half-moved tree. Idempotent; refuses rather than merges when both
+  // the old and the new directory exist, because that is a human decision.
+  const migration = migrateMemoryRoot({ memoryDir: config.memoryDir ?? null })
+  if (migration.status === 'refused' || migration.status === 'failed') {
+    const line = `[maestro-memory] store migration ${migration.status}: ${migration.reason} (from ${migration.from} to ${migration.to})`
+    try {
+      if (typeof ctx?.logger?.error === 'function') ctx.logger.error(line)
+      else console.error(line)
+    } catch {}
+  }
+
   const order = config.snapshotOrder ?? DEFAULTS.snapshotOrder
   const store = new MaestroMemoryStore(config.memoryDir ?? null)
   const todoStore = new TodoStore(config.memoryDir ?? null)
@@ -798,10 +811,19 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         // Cost is a property of the renderer, not of any one project, so it is
         // reported on both paths — including when cwd is missing.
         const cost = costTracker.snapshot()
+        // Where the store actually lives, and whether this machine has been moved
+        // to the 4.0 root. A half-migrated machine must be visible, not silent.
+        const migrationInfo = {
+          root,
+          status: migration.status,
+          method: migration.method ?? null,
+          marker: hasMigrationMarker(root),
+          legacyRoot: migration.from,
+        }
         const cwdRaw = (payload && typeof payload.cwd === 'string' && payload.cwd.trim()) ? payload.cwd.trim() : ''
         // Health requires explicit cwd; if missing, return empty (client should pass sessionCwd)
         if (!cwdRaw) {
-          return { ok: true, value: { project: { total: 0, withSummary: 0, coverage: 100 }, daily: { counts: [0,0,0,0,0,0,0] }, longest: [], cost } }
+          return { ok: true, value: { project: { total: 0, withSummary: 0, coverage: 100 }, daily: { counts: [0,0,0,0,0,0,0] }, longest: [], cost, migration: migrationInfo } }
         }
         const cwd = cwdRaw
         const projectEntries = store.list('project', cwd)
@@ -829,7 +851,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
           hasSanitize: true,
           hasGatedQueue: true,
         })
-        const health = { project: { total, withSummary, coverage }, daily: { counts: dailyCounts }, longest, fiveDim, cost }
+        const health = { project: { total, withSummary, coverage }, daily: { counts: dailyCounts }, longest, fiveDim, cost, migration: migrationInfo }
         return { ok: true, value: health }
       } catch (e: any) {
         return { ok: false, error: e?.message ?? String(e) }

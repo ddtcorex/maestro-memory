@@ -694,6 +694,13 @@ function HealthView({ ctx }: {ctx:any}): React.ReactElement {
       React.createElement('div',{className:'memx-card memx-stat'}, React.createElement('div',{className:'memx-kicker'},'Coverage'), React.createElement('div',{className:'memx-statval'}, React.createElement('span',{className:'memx-stat-value', 'data-state':cov.state}, cov.value)), React.createElement('div',{className:'memx-sm'}, cov.caption)),
       React.createElement('div',{className:'memx-card memx-stat'}, React.createElement('div',{className:'memx-kicker'},'Daily last 7d'), React.createElement('div',{style:{fontWeight:600}}, seriesText(health.daily.counts as number[])), React.createElement('div',{className:'memx-sm'}, 'entries per day')),
     ),
+    // Where the store lives and whether this machine finished the 4.0 move.
+    // A half-migrated machine used to be invisible outside the boot log.
+    health.migration?React.createElement('div',{className:'memx-card memx-stat','data-testid':'health-migration'},
+      React.createElement('div',{className:'memx-kicker'},'Store root'),
+      React.createElement('div',{className:'memx-sm', style:{fontFamily:'ui-monospace,monospace', wordBreak:'break-all'}}, String(health.migration.root ?? '')),
+      React.createElement('div',{className:'memx-sm'}, health.migration.marker? 'migrated-v4 marker present' : 'marker missing: the store move has not completed on this machine'),
+    ):null,
     health.fiveDim?React.createElement('div',{className:'memx-card'},
       React.createElement('div',{className:'memx-dim-head'},
         React.createElement('span',{className:'memx-dim-title'}, '5-Dim Score'),
