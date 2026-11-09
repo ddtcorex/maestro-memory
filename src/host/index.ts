@@ -15,8 +15,9 @@ import { buildFeedbackLine } from './memory/feedback.ts'
 import { TodoStore, resolveQuadrant } from './todo/store.ts'
 import { TODO_TARGETS, TODO_STATUSES } from './storage/legacy-format.ts'
 import { SuggestionQueue, enqueueSuggestion, approveSuggestions, rejectSuggestions } from './review/queue.ts'
-import { resolveMemoryRoot, resolveDshHome, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
-import { migrateMemoryRoot, hasMigrationMarker } from './storage/migrate.ts'
+import { resolveStoreRoot, resolveDshHome, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
+import { migrateMemoryRoot } from './storage/migrate.ts'
+import { readHealth } from './storage/health.ts'
 import { appendEntryAtomicSync } from './storage/atomic-store.ts'
 import { SyncService } from './sync/service.ts'
 import { RealGitAdapter } from './sync/git.ts'
@@ -105,7 +106,8 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
   // Move the pre-4.0 store root before anything reads it, so no reader ever
   // sees a half-moved tree. Idempotent; refuses rather than merges when both
   // the old and the new directory exist, because that is a human decision.
-  const migration = migrateMemoryRoot({ memoryDir: config.memoryDir ?? null, dshHome: resolveDshHome() })
+  const resolved = resolveStoreRoot({ memoryDir: config.memoryDir ?? null, env: process.env })
+  const migration = migrateMemoryRoot({ root: resolved.root, mode: resolved.mode, dshHome: resolveDshHome() })
   if (migration.status === 'refused' || migration.status === 'failed') {
     const line = `[maestro-memory] store migration ${migration.status}: ${migration.reason} (from ${migration.from} to ${migration.to})`
     try {
@@ -117,7 +119,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
   const order = config.snapshotOrder ?? DEFAULTS.snapshotOrder
   const store = new MaestroMemoryStore(config.memoryDir ?? null)
   const todoStore = new TodoStore(config.memoryDir ?? null)
-  const root = resolveMemoryRoot(config.memoryDir ?? null)
+  const root = resolved.root
   const queue = new SuggestionQueue(suggestionsPath(root))
   const syncService = new SyncService(config.memoryDir ?? null, new RealGitAdapter())
   const writeGuardConfig = resolveWriteGuard(config.writeGuard)
@@ -872,11 +874,20 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         const cost = costTracker.snapshot()
         // Where the store actually lives, and whether this machine has been moved
         // to the 4.0 root. A half-migrated machine must be visible, not silent.
+        const markerState = readHealth({ root, dshHome: resolveDshHome() })
         const migrationInfo = {
           root,
+          mode: resolved.mode,
           status: migration.status,
           method: migration.method ?? null,
-          marker: hasMigrationMarker(root),
+          // Both markers travel: v4 records the package rename, v5 records the move out
+          // of the DSH home. `marker` stays as the v4 alias the Memory view already reads.
+          marker: markerState.markerV4,
+          markerV4: markerState.markerV4,
+          markerV5: markerState.markerV5,
+          // A store recreated beside the live one by an older client. Recovery is a
+          // restart of that client, so it is reported, not repaired.
+          staleLegacyRoot: markerState.legacyRoot,
           legacyRoot: migration.from,
         }
         const cwdRaw = (payload && typeof payload.cwd === 'string' && payload.cwd.trim()) ? payload.cwd.trim() : ''

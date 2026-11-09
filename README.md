@@ -90,8 +90,15 @@ exactly as in DSH.
 
 **Start a session with `memory_context`.** Clients with a session-start hook (Claude Code) can call it
 automatically; the rest call it as their first tool use and get the same bounded context DSH injects.
-The store root follows `DSH_HOME` when set, so a test or a second profile can never touch the live
-store.
+The store lives at `~/.maestro-memory`. Resolution order: `config.memoryDir`, then
+`MAESTRO_MEMORY_DIR`, then an isolated `DSH_HOME` (a path other than `<home>/.dsh`, which is what a
+dry-boot or a test uses), then the neutral root. A store still at an older root moves itself on the
+next boot and writes `migrated-v5.json`; two store roots present is a refusal, never a merge.
+
+**After upgrading, restart every client that had the store open** (Claude Code, Codex, Cursor, and
+`dsh web` itself). A process started before the move keeps the resolved root it computed at startup;
+an old one recreates `~/.dsh/maestro-memory` on its next write. The Memory view reports that stray
+root as `staleLegacyRoot` instead of hiding it.
 
 ## System Prompt Snapshot
 

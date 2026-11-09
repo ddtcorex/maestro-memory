@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { migrateMemoryRoot, MIGRATION_MARKER, LEGACY_ROOT_NAME } from '../src/host/storage/migrate.ts'
+import { migrateMemoryRoot, MIGRATION_MARKER, MIGRATION_MARKER_V5, LEGACY_ROOT_NAME } from '../src/host/storage/migrate.ts'
 
 let home: string
 
@@ -32,9 +32,13 @@ function countFiles(dir: string): number {
   return n
 }
 
-const legacyRoot = () => join(home, '.dsh', LEGACY_ROOT_NAME)
-const targetRoot = () => join(home, '.dsh', 'maestro-memory')
-const markerPath = () => join(targetRoot(), '.maestro-memory', MIGRATION_MARKER)
+const dshHome = () => join(home, '.dsh')
+const legacyRoot = () => join(dshHome(), LEGACY_ROOT_NAME)
+const v4Root = () => join(dshHome(), 'maestro-memory')
+const targetRoot = () => join(home, '.maestro-memory')
+const markerPath = () => join(targetRoot(), '.maestro-memory', MIGRATION_MARKER_V5)
+const migrate = (extra: Record<string, unknown> = {}) =>
+  migrateMemoryRoot({ root: targetRoot(), mode: 'default', dshHome: dshHome(), ...(extra as any) })
 
 describe('migrateMemoryRoot', () => {
   it('moves the legacy root into place and leaves a marker', () => {
@@ -45,9 +49,9 @@ describe('migrateMemoryRoot', () => {
       '.maestro-memory/delimiter-repaired-v3': '{"at":"x"}',
     })
 
-    const res = migrateMemoryRoot({ home })
+    const res = migrate()
 
-    expect(res.status).toBe('migrated')
+    expect(res.status).toBe('moved')
     expect(res.method).toBe('rename')
     expect(existsSync(legacyRoot())).toBe(false)
     expect(readFileSync(join(targetRoot(), 'MEMORY.md'), 'utf8')).toBe('a\n§\nb')
@@ -61,7 +65,7 @@ describe('migrateMemoryRoot', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'old' })
     seed(targetRoot(), { 'MEMORY.md': 'new' })
 
-    const res = migrateMemoryRoot({ home })
+    const res = migrate()
 
     expect(res.status).toBe('refused')
     expect(readFileSync(join(legacyRoot(), 'MEMORY.md'), 'utf8')).toBe('old')
@@ -72,12 +76,13 @@ describe('migrateMemoryRoot', () => {
   it('is idempotent: a second run on a migrated store is a no-op', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'a' })
 
-    expect(migrateMemoryRoot({ home }).status).toBe('migrated')
-    const second = migrateMemoryRoot({ home })
+    expect(migrate().status).toBe('moved')
+    const second = migrate()
 
     expect(second.status).toBe('already')
     expect(existsSync(legacyRoot())).toBe(false)
-    expect(countFiles(targetRoot())).toBe(2) // MEMORY.md + marker
+    // MEMORY.md plus the marker directory holding both markers.
+    expect(countFiles(targetRoot())).toBe(3)
   })
 
   it('falls back to copy when rename crosses devices, and removes the source only after verifying', () => {
@@ -87,8 +92,7 @@ describe('migrateMemoryRoot', () => {
       'daily/2026-11-02.md': 'd',
     })
 
-    const res = migrateMemoryRoot({
-      home,
+    const res = migrate({
       rename: () => {
         const err: any = new Error('cross-device link')
         err.code = 'EXDEV'
@@ -96,7 +100,7 @@ describe('migrateMemoryRoot', () => {
       },
     })
 
-    expect(res.status).toBe('migrated')
+    expect(res.status).toBe('moved')
     expect(res.method).toBe('copy')
     expect(existsSync(legacyRoot())).toBe(false)
     expect(readFileSync(join(targetRoot(), 'projects', 'abc', 'KEY.md'), 'utf8')).toBe('k')
@@ -106,8 +110,7 @@ describe('migrateMemoryRoot', () => {
   it('reports a failure and keeps the source when rename fails for another reason', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'a' })
 
-    const res = migrateMemoryRoot({
-      home,
+    const res = migrate({
       rename: () => {
         const err: any = new Error('permission denied')
         err.code = 'EACCES'
@@ -121,9 +124,9 @@ describe('migrateMemoryRoot', () => {
   })
 
   it('writes the marker on a fresh machine with no legacy directory', () => {
-    const res = migrateMemoryRoot({ home })
+    const res = migrate()
 
-    expect(res.status).toBe('already')
+    expect(res.status).toBe('created')
     expect(existsSync(markerPath())).toBe(true)
   })
 
@@ -131,30 +134,29 @@ describe('migrateMemoryRoot', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'old' })
     const custom = join(home, 'elsewhere')
 
-    const res = migrateMemoryRoot({ home, memoryDir: custom })
+    const res = migrateMemoryRoot({ root: custom, mode: 'configured', dshHome: dshHome() })
 
     expect(res.status).toBe('skipped')
     expect(readFileSync(join(legacyRoot(), 'MEMORY.md'), 'utf8')).toBe('old')
     expect(existsSync(custom)).toBe(false)
   })
 
-  it('migrates inside DSH_HOME, never the real home, when one is given', () => {
-    const dshHome = join(home, 'isolated-dsh')
-    seed(join(dshHome, LEGACY_ROOT_NAME), { 'MEMORY.md': 'a' })
+  it('moves nothing in isolated mode, so a dry-boot cannot touch the live store', () => {
+    const isolated = join(home, 'isolated-dsh')
+    seed(join(isolated, LEGACY_ROOT_NAME), { 'MEMORY.md': 'a' })
 
-    const res = migrateMemoryRoot({ home, dshHome })
+    const res = migrateMemoryRoot({ root: join(isolated, 'maestro-memory'), mode: 'isolated', dshHome: isolated })
 
-    expect(res.status).toBe('migrated')
-    expect(res.to).toBe(join(dshHome, 'maestro-memory'))
-    expect(existsSync(join(dshHome, 'maestro-memory', 'MEMORY.md'))).toBe(true)
-    // Nothing was created at the OS-home path this time.
-    expect(existsSync(join(home, '.dsh', 'maestro-memory'))).toBe(false)
+    expect(res.status).toBe('skipped')
+    expect(existsSync(join(isolated, LEGACY_ROOT_NAME, 'MEMORY.md'))).toBe(true)
+    expect(existsSync(join(isolated, 'maestro-memory'))).toBe(false)
+    expect(existsSync(join(home, '.maestro-memory'))).toBe(false)
   })
 
   it('records what it did in the marker', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'a' })
 
-    migrateMemoryRoot({ home })
+    migrate()
 
     const marker = JSON.parse(readFileSync(markerPath(), 'utf8'))
     expect(marker.from).toBe(legacyRoot())

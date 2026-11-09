@@ -71,15 +71,19 @@ describe('layout', () => {
       expect(resolveMemoryRoot(undefined)).toBe('/tmp/isolated-store/maestro-memory')
       expect(resolveMemoryRoot('/custom')).toBe('/custom')
       process.env.DSH_HOME = '   '
-      expect(resolveMemoryRoot(null)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
+      expect(resolveMemoryRoot(null)).toBe(join(homedir(), '.maestro-memory'))
+      // Production's own shape: DSH_HOME pointing at <home>/.dsh is NOT isolation.
+      process.env.DSH_HOME = join(homedir(), '.dsh')
+      expect(resolveMemoryRoot(null)).toBe(join(homedir(), '.maestro-memory'))
     } finally {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
     }
   })
   it('resolves root default', () => {
-    expect(resolveMemoryRoot(null as any)).toMatch(/\.dsh\/maestro-memory/)
-    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
+    // The neutral root, not the DSH home: the store serves agents that are not DSH.
+    expect(resolveMemoryRoot(null as any)).toMatch(/\.maestro-memory$/)
+    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.maestro-memory'))
     expect(resolveMemoryRoot('/custom')).toBe('/custom')
   })
   it('resolves five memory files', () => {
