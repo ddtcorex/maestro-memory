@@ -78,6 +78,22 @@ describe('migrateMemoryRoot v5', () => {
     expect(statSync(join(root, '.maestro-memory')).mode & 0o777).toBe(0o700)
   })
 
+  it('reports a failed move instead of throwing', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'mig-dsh9-'))
+    const source = join(dshHome, 'maestro-memory')
+    seedStore(source)
+    // An unreadable source: the wrapper must return, not throw, or the boot hook takes
+    // the whole memory row down with an unrelated message.
+    require('node:fs').chmodSync(source, 0o000)
+    try {
+      const res = migrateMemoryRoot({ root: join(dshHome, 'target'), mode: 'default', dshHome })
+      expect(res.status).toBe('failed')
+      expect(String(res.reason)).toMatch(/migration threw/)
+    } finally {
+      require('node:fs').chmodSync(source, 0o700)
+    }
+  })
+
   it('is a no-op once the store carries the v5 marker', () => {
     const dshHome = mkdtempSync(join(tmpdir(), 'mig-dsh6-'))
     const home = mkdtempSync(join(tmpdir(), 'mig-home6-'))

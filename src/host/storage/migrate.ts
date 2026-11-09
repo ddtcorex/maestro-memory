@@ -115,7 +115,25 @@ function writeMarker(target: string, payload: Record<string, unknown>, markerNam
  *
  * Runs before the first store read, so no reader ever sees a half-moved tree.
  */
+/**
+ * Never throws: a boot hook that throws takes the memory row down with it, and the
+ * reason the user sees is unrelated to the cause. A live lock, an unreadable source or
+ * a rename that fails mid-flight all come back as `failed` with the reason.
+ */
 export function migrateMemoryRoot(params: MigrateParams): MigrationResult {
+  try {
+    return migrateMemoryRootInner(params)
+  } catch (error: any) {
+    return {
+      status: 'failed',
+      from: params.dshHome,
+      to: params.root,
+      reason: `migration threw: ${error?.message ?? String(error)}; inspect both roots before retrying`,
+    }
+  }
+}
+
+function migrateMemoryRootInner(params: MigrateParams): MigrationResult {
   const target = params.root
   const sources = [join(params.dshHome, CURRENT_ROOT_NAME), join(params.dshHome, LEGACY_ROOT_NAME)]
   const present = sources.filter((source) => existsSync(source))
