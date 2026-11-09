@@ -69,8 +69,18 @@ export function createServer(opts: ServerOptions = {}): Server {
       `[maestro-memory] store migration ${migration.status}: ${migration.reason} (from ${migration.from} to ${migration.to})`,
     )
   }
-  const root = resolved.root
-  const handlers = createToolHandlers({ root })
+  // The store can move under a running session: a 5.0 boot migration, or an operator
+  // pointing MAESTRO_MEMORY_DIR elsewhere. Binding the handlers once meant the next
+  // write recreated the pre-move directory and every later boot refused.
+  const binder = makeHandlerBinder({
+    resolveRoot: () => resolveServerRoot(opts),
+    onRootChange: (root) => {
+      const next = migrateMemoryRoot({ root, mode: resolveStoreRoot({ memoryDir: opts.memoryDir ?? null, env: opts.dshHome ? { ...process.env, DSH_HOME: opts.dshHome } : process.env }).mode, dshHome })
+      if (next.status === 'refused' || next.status === 'failed') {
+        console.error(`[maestro-memory] store migration ${next.status}: ${next.reason} (from ${next.from} to ${next.to})`)
+      }
+    },
+  })
 
   const server = new Server(
     { name: 'maestro-memory', version: packageVersion() },
@@ -98,7 +108,7 @@ export function createServer(opts: ServerOptions = {}): Server {
       if (!handler) {
         return { content: [{ type: 'text', text: `no handler for ${name}` }], isError: true }
       }
-      const result = handlers[handler](args)
+      const result = binder.get().handlers[handler](args)
       return { content: [{ type: 'text', text: String(result.text ?? '') }] }
     } catch (error: any) {
       // A throwing handler must not take the server down: the client sees the
@@ -114,6 +124,31 @@ async function main(): Promise<void> {
   const server = createServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
+}
+
+/**
+ * Bind tool handlers to the root the resolver reports, and rebind when it changes.
+ *
+ * Kept separate from `createServer` so the rebind behaviour is testable without a
+ * transport: a client that was already running when the store moved must keep
+ * working, and must not resurrect the directory it used to write to.
+ */
+export function makeHandlerBinder(opts: {
+  resolveRoot: () => string
+  onRootChange?: (root: string) => void
+  create?: typeof createToolHandlers
+}): { get: () => { root: string; handlers: ToolHandlers } } {
+  const create = opts.create ?? createToolHandlers
+  let bound: { root: string; handlers: ToolHandlers } | null = null
+  return {
+    get() {
+      const root = opts.resolveRoot()
+      if (bound && bound.root === root) return bound
+      if (bound) opts.onRootChange?.(root)
+      bound = { root, handlers: create({ root }) }
+      return bound
+    },
+  }
 }
 
 /** Tool name to handler name, declared rather than derived by string surgery. */
