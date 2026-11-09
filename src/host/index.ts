@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { MaestroMemoryStore } from './memory/store.ts'
 import type { MemoryAction } from './memory/store.ts'
 import { repairAllTracks } from './memory/repair-runner.ts'
+import { createStoreSearch } from './memory/search/store-index.ts'
 import { planArchive, DEFAULT_ARCHIVE_POLICY } from './memory/maintenance.ts'
 import { applyBatch } from './memory/batch.ts'
 import { buildFeedbackLine } from './memory/feedback.ts'
@@ -350,6 +351,69 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
       if (typeof dispose === 'function') dispose()
     }
   }, 'maestro-memory: tool')
+
+  // Retrieval over the whole store. The snapshot shows a bounded slice, chosen by
+  // recency; this is how the agent reaches anything older without grepping files.
+  // Compact lines by default, full text only for the ids it actually opens.
+  ctx.effect(() => {
+    const search = createStoreSearch({ root })
+    const tool = defineTool({
+      name: 'memory_search',
+      isConcurrencySafe: () => true,
+      description:
+        'Search the durable memory store by words, across key/project/daily/memory/user. Use this when the answer might live in an older entry the prompt does not show; `memory list` is for browsing one track, this is for finding by meaning-of-words. Returns compact hits (id, track, date, score, preview); pass `id` to open one entry in full.',
+      parameters: {
+        query: { type: 'string', description: 'Plain words. No regex and no query language; diacritics are optional.' },
+        tracks: { type: 'string', description: 'Comma-separated tracks to search: key,project,daily,memory,user. Default key,project.' },
+        cwd: { type: 'string', description: 'Working directory; required for the key and project tracks.' },
+        limit: { type: 'integer', description: 'Max hits, default 8, capped at 25.' },
+        id: { type: 'string', description: 'Open one entry in full by its 8-hex id instead of searching.' },
+        full: { type: 'boolean', description: 'Return the full text of every hit, not just the preview.' },
+      },
+      output: CONTENT_OUTPUT,
+      execute: async (args: any, exec: any) => {
+        if (exec?.signal?.aborted) throw new Error('memory_search aborted')
+        try {
+          const cwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : null
+          const id = typeof args.id === 'string' ? args.id.trim() : ''
+          const tracks = typeof args.tracks === 'string' && args.tracks.trim()
+            ? args.tracks.split(',').map((t: string) => t.trim()).filter(Boolean)
+            : undefined
+          if (id) {
+            const body = search.open(id, { cwd, tracks })
+            return { content: [{ type: 'text', text: body ?? `not found: ${id}` }] }
+          }
+          const query = typeof args.query === 'string' ? args.query.trim() : ''
+          if (!query) return { content: [{ type: 'text', text: 'query is required (or pass id to open one entry)' }] }
+          // An explicit request for a cwd-scoped track without a cwd is a caller
+          // mistake, so it is refused. The DEFAULT set simply skips those tracks
+          // and says so in the result, because the model usually just wants to
+          // find the entry and does not owe this tool a cwd.
+          if (tracks && !cwd && (tracks.includes('key') || tracks.includes('project'))) {
+            return { content: [{ type: 'text', text: 'cwd is required for the key and project tracks (pass cwd, or restrict tracks)' }] }
+          }
+          const effectiveTracks = tracks ?? (cwd ? undefined : ['memory', 'user', 'daily'])
+          const limit = Number.isFinite(Number(args.limit)) ? Number(args.limit) : undefined
+          const hits = search.query(query, { cwd, tracks: effectiveTracks, limit })
+          if (!hits.length) return { content: [{ type: 'text', text: `no match for ${JSON.stringify(query)}` }] }
+          const lines = hits.map((hit) => {
+            const head = `${hit.id}  ${hit.track}  ${hit.date ?? '-'}  ${hit.score.toFixed(2)}  ${hit.preview}`
+            if (args.full !== true) return head
+            const body = search.open(hit.id, { cwd, tracks })
+            return body ? `${head}\n${body}` : head
+          })
+          if (!cwd && !tracks) lines.push('(searched memory, user and daily only; pass cwd to include key and project)')
+          return { content: [{ type: 'text', text: lines.join('\n') }] }
+        } catch (e: any) {
+          return { content: [{ type: 'text', text: `error: ${e?.message ?? String(e)}` }] }
+        }
+      },
+    })
+    const dispose = ctx.tools.register(tool)
+    return () => {
+      if (typeof dispose === 'function') dispose()
+    }
+  }, 'maestro-memory: search-tool')
 
   // Gated memory_suggest tool — model proposals go to queue, never directly to memory
   ctx.effect(() => {
