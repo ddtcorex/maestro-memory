@@ -64,8 +64,8 @@ describe('layout', () => {
     expect(() => projectDir('/root', '')).toThrow()
   })
   it('resolves root default', () => {
-    expect(resolveMemoryRoot(null as any)).toMatch(/\.dsh\/dsh-maestro-memory/)
-    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.dsh', 'dsh-maestro-memory'))
+    expect(resolveMemoryRoot(null as any)).toMatch(/\.dsh\/maestro-memory/)
+    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
     expect(resolveMemoryRoot('/custom')).toBe('/custom')
   })
   it('resolves five memory files', () => {

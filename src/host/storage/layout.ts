@@ -8,10 +8,16 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** Resolve the canonical memories root: config.memoryDir or ~/.dsh/dsh-maestro-memory */
+/**
+ * Resolve the canonical memories root: config.memoryDir or ~/.dsh/maestro-memory.
+ *
+ * The parent `.dsh` is kept deliberately: the core sync publishes to
+ * `<dshRoot>/<path>` on the peer, so the store has to stay relative to the DSH
+ * home until that model learns a second root (multi-agent batch).
+ */
 export function resolveMemoryRoot(memoryDir: string | null | undefined): string {
   if (memoryDir) return memoryDir
-  return join(homedir(), '.dsh', 'dsh-maestro-memory')
+  return join(homedir(), '.dsh', 'maestro-memory')
 }
 
 /** 12-hex project hash for a cwd (sha1(cwd).slice(0,12)) */
