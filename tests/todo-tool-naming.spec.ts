@@ -69,7 +69,7 @@ function contextTexts(ctx: any): string[] {
 describe('the durable todo tool is named apart from the harness task list', () => {
   it('registers `maestro_todo` and no longer registers `dtodo`', () => {
     const ctx = boot()
-    expect(ctx.state.tools.map((t: any) => t.name)).toEqual(['memory', 'memory_suggest', 'maestro_todo'])
+    expect(ctx.state.tools.map((t: any) => t.name)).toEqual(['memory', 'memory_search', 'memory_suggest', 'maestro_todo'])
   })
 
   it('opens its description by saying what it is, and names `todo_write` as the other one', () => {

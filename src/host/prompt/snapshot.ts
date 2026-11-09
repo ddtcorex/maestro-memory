@@ -29,6 +29,41 @@ export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 6144, rece
  */
 export const SNAPSHOT_SECTION_MAX_ENTRIES = { memory: 8, user: 8, key: 12, recentDaily: 2, autoRecall: 4 } as const
 
+/**
+ * Byte budget for the search index lane, shared by the key and project lanes.
+ * Small on purpose: the lane exists to say "this exists, search for it", not to
+ * carry content. Anything it did not lift stays reachable through memory_search.
+ */
+export const SNAPSHOT_INDEX_LANE_CAP = 768
+
+const INDEX_ENTRY_ID_RE = /\[id:\s*([0-9a-f]{8})\]/i
+
+/**
+ * One `- [id] summary` line per entry that is NOT already injected in full.
+ *
+ * Only entries carrying a summary qualify: an untagged entry would have to be
+ * truncated into a fragment, which teaches the model nothing and costs a line.
+ */
+export function buildIndexLane(all: readonly string[], injected: readonly string[], cap = SNAPSHOT_INDEX_LANE_CAP): string[] {
+  if (!all.length) return []
+  const shown = new Set(injected)
+  const lines: string[] = []
+  let used = 0
+  for (let i = all.length - 1; i >= 0; i--) {
+    const entry = all[i]!
+    if (shown.has(entry)) continue
+    const summary = parseEntrySummary(entry)
+    if (!summary) continue
+    const id = INDEX_ENTRY_ID_RE.exec(entry)?.[1]
+    const line = id ? `- [id:${id}] ${summary}` : `- ${summary}`
+    const cost = Buffer.byteLength(line, 'utf8') + 1
+    if (used + cost > cap) break
+    lines.push(line)
+    used += cost
+  }
+  return lines.reverse()
+}
+
 export type SnapshotSectionKey = keyof typeof SNAPSHOT_SECTION_CAPS
 
 export interface SnapshotRenderOpts {
@@ -129,7 +164,7 @@ function neutralizePromptBraces(text: string): string {
 
 /** Per-section cost of one render. */
 export interface SectionStats {
-  key: 'memory' | 'user' | 'key' | 'projectContext' | 'reference' | 'recentDaily'
+  key: 'memory' | 'user' | 'key' | 'keyIndex' | 'projectContext' | 'reference' | 'recentDaily'
   cap: number
   bytes: number
   entries: number
@@ -196,13 +231,25 @@ export function renderSnapshotWithStats(
       }
     } catch {}
   }
+  const keyAll = ctx.cwd ? store.list('key', ctx.cwd, ctx.branch ? { branch: ctx.branch } : {}) : []
   const key = ctx.cwd
-    ? fitSection(store.list('key', ctx.cwd, ctx.branch ? { branch: ctx.branch } : {}), caps.key, SNAPSHOT_SECTION_MAX_ENTRIES.key)
+    ? fitSection(keyAll, caps.key, SNAPSHOT_SECTION_MAX_ENTRIES.key)
     : { kept: [], bytes: 0, dropped: 0, truncated: 0 }
 
   if (mem.kept.length) take('memory', mem, caps.memory, `# Global Memory\n${mem.kept.join('\n---\n')}`)
   if (user.kept.length) take('user', user, caps.user, `# User Memory\n${user.kept.join('\n---\n')}`)
   if (key.kept.length) take('key', key, caps.key, `# Project Key Memory\n${key.kept.join('\n---\n')}`)
+
+  // Index lane: ids and summaries only, for the entries the key lane left out.
+  // This is what makes "I know a rule exists, find it" possible without loading
+  // 300 KB of prose; memory_search then opens the one entry that matters.
+  if (ctx.cwd) {
+    const lane = buildIndexLane(keyAll, key.kept)
+    if (lane.length) {
+      parts.push(`# Key Memory Index (search with memory_search)\n${lane.join('\n')}`)
+      sections.push({ key: 'keyIndex', cap: SNAPSHOT_INDEX_LANE_CAP, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })
+    }
+  }
 
   // Auto-recall: newest 4 project entries for current cwd, each truncated to 600 chars
   // Mirrors dsh-memory timeline(limit:4, 600 chars) but file-native, no Python.
