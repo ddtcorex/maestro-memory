@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-11-09
+
+The store leaves the harness home. It was the last part of the product that claimed to
+belong to DSH, while it has served Claude Code, Codex and Cursor since 4.2.0.
+
+### Changed
+
+- **Store root is `~/.maestro-memory`** by default, resolved by one function that also
+  reports how it chose: `configured`, `env`, `isolated` or `default`.
+  `MAESTRO_MEMORY_DIR` and `config.memoryDir` still win over everything.
+- **An existing store moves itself on boot**, from `<DSH_HOME>/maestro-memory` (4.x) or
+  `<DSH_HOME>/dsh-maestro-memory` (pre-4.0), and writes `migrated-v5.json` beside the
+  `migrated-v4` marker that stays in place. Two store roots present is still a refusal,
+  never a merge.
+- **The MCP server re-resolves the store root on every tool call**, so a client that was
+  already running when the store moved keeps writing to the new root instead of
+  recreating the old directory.
+- The new root is created `0700`: outside `~/.dsh` there is no 0700 parent to inherit.
+
+### Upgrade order
+
+`dsh-maestro-core` 0.15.0 first, then this package. Both machines must run 5.0.0 before
+sync resumes; a half-upgraded pair is refused with `PEER_NOT_MOVED` instead of publishing
+into a directory the upgraded machine no longer reads.
+
 ## [4.2.0] - 2026-11-09
 
 The store is no longer reachable only from DSH. An MCP server exposes the same files to Claude Code,
