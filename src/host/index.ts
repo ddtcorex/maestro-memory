@@ -874,7 +874,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         const cost = costTracker.snapshot()
         // Where the store actually lives, and whether this machine has been moved
         // to the 4.0 root. A half-migrated machine must be visible, not silent.
-        const markerState = readHealth({ root })
+        const markerState = readHealth({ root, dshHome: resolveDshHome() })
         const migrationInfo = {
           root,
           mode: resolved.mode,
@@ -885,6 +885,9 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
           marker: markerState.markerV4,
           markerV4: markerState.markerV4,
           markerV5: markerState.markerV5,
+          // A store recreated beside the live one by an older client. Recovery is a
+          // restart of that client, so it is reported, not repaired.
+          staleLegacyRoot: markerState.legacyRoot,
           legacyRoot: migration.from,
         }
         const cwdRaw = (payload && typeof payload.cwd === 'string' && payload.cwd.trim()) ? payload.cwd.trim() : ''

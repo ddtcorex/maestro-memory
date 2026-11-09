@@ -43,9 +43,9 @@ export type MigrationStatus = 'moved' | 'created' | 'already' | 'refused' | 'fai
 
 export interface MigrationResult {
   status: MigrationStatus
-  /** The directory the store used before 4.0. */
+  /** Where the store was: a legacy root, or the DSH home when nothing moved. */
   from: string
-  /** The directory the store uses from 4.0 on. */
+  /** Where the store is after this run: the resolved root. */
   to: string
   /** How the move happened, when one happened. */
   method?: 'rename' | 'copy'
@@ -208,14 +208,17 @@ function migrateMemoryRootInner(params: MigrateParams): MigrationResult {
 
     // Both markers are written, in that order: readers that only know v4 keep working,
     // and the presence of v5 is what says the move finished.
+    // The pair is written in a fixed order and both are attempted: a failed v4 write
+    // must not skip v5, or a rerun takes the fresh path and overwrites the real v4
+    // record with `from: null`, losing the chain.
     const v4 = readMarkerV4(target)
-    const markerError =
-      writeMarker(target, v4 ?? { at: new Date().toISOString(), from: source, to: target }, MIGRATION_MARKER) ??
-      writeMarker(
-        target,
-        { at: new Date().toISOString(), from: source, to: target, mode: params.mode, method },
-        MIGRATION_MARKER_V5,
-      )
+    const v4Error = writeMarker(target, v4 ?? { at: new Date().toISOString(), from: source, to: target }, MIGRATION_MARKER)
+    const v5Error = writeMarker(
+      target,
+      { at: new Date().toISOString(), from: source, to: target, mode: params.mode, method },
+      MIGRATION_MARKER_V5,
+    )
+    const markerError = v4Error ?? v5Error
     const result: MigrationResult = { status: 'moved', from: source, to: target, method, files: before.files, bytes: before.bytes }
     if (markerError) result.reason = `marker not written: ${markerError}`
     return result
@@ -224,9 +227,9 @@ function migrateMemoryRootInner(params: MigrateParams): MigrationResult {
   // Fresh machine: there is nothing to move, so the only job is to declare a current
   // root. 0700 because at $HOME the store is no longer protected by a 0700 parent.
   mkdirSync(target, { recursive: true, mode: 0o700 })
-  const markerError =
-    writeMarker(target, { at: new Date().toISOString(), from: null, to: target, mode: params.mode }, MIGRATION_MARKER_V5) ??
-    writeMarker(target, { at: new Date().toISOString(), from: null, to: target }, MIGRATION_MARKER)
+  const v4Error = writeMarker(target, { at: new Date().toISOString(), from: null, to: target }, MIGRATION_MARKER)
+  const v5Error = writeMarker(target, { at: new Date().toISOString(), from: null, to: target, mode: params.mode }, MIGRATION_MARKER_V5)
+  const markerError = v4Error ?? v5Error
   const created: MigrationResult = { status: 'created', from, to: target }
   if (markerError) created.reason = `marker not written: ${markerError}`
   return created
@@ -255,7 +258,4 @@ function copyThenRemove(source: string, target: string, before: Inventory): { er
   }
 }
 
-/** True when this machine's store root is at the post-4.0 path. */
-export function hasMigrationMarker(root: string): boolean {
-  return existsSync(join(maestroMetaDir(root), MIGRATION_MARKER))
-}
+

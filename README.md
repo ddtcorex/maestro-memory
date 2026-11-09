@@ -95,6 +95,11 @@ The store lives at `~/.maestro-memory`. Resolution order: `config.memoryDir`, th
 dry-boot or a test uses), then the neutral root. A store still at an older root moves itself on the
 next boot and writes `migrated-v5.json`; two store roots present is a refusal, never a merge.
 
+**After upgrading, restart every client that had the store open** (Claude Code, Codex, Cursor, and
+`dsh web` itself). A process started before the move keeps the resolved root it computed at startup;
+an old one recreates `~/.dsh/maestro-memory` on its next write. The Memory view reports that stray
+root as `staleLegacyRoot` instead of hiding it.
+
 ## System Prompt Snapshot
 
 `memory:snapshot` (order 500) injects bounded deterministic context:

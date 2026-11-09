@@ -10,13 +10,19 @@ describe('health markers', () => {
     mkdirSync(join(root, '.maestro-memory'), { recursive: true })
     writeFileSync(join(root, '.maestro-memory', 'migrated-v4'), '{}')
     writeFileSync(join(root, '.maestro-memory', 'migrated-v5.json'), '{}')
-    expect(readHealth({ root })).toEqual({ storeRoot: root, markerV4: true, markerV5: true })
+    expect(readHealth({ root })).toEqual({ storeRoot: root, markerV4: true, markerV5: true, legacyRoot: null })
   })
 
   it('reports a v5-only store without claiming the v4 rename is missing', () => {
     const root = mkdtempSync(join(tmpdir(), 'health2-'))
     mkdirSync(join(root, '.maestro-memory'), { recursive: true })
     writeFileSync(join(root, '.maestro-memory', 'migrated-v5.json'), '{}')
-    expect(readHealth({ root })).toEqual({ storeRoot: root, markerV4: false, markerV5: true })
+    expect(readHealth({ root })).toEqual({ storeRoot: root, markerV4: false, markerV5: true, legacyRoot: null })
+  })
+  it('reports a store an older client recreated beside the live one', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'health-dsh-'))
+    const root = mkdtempSync(join(tmpdir(), 'health-live-'))
+    mkdirSync(join(dshHome, 'maestro-memory'), { recursive: true })
+    expect(readHealth({ root, dshHome }).legacyRoot).toBe(join(dshHome, 'maestro-memory'))
   })
 })
