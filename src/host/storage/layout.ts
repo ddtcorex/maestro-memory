@@ -24,16 +24,54 @@ export function resolveDshHome(env: NodeJS.ProcessEnv = process.env): string {
   return join(homedir(), '.dsh')
 }
 
+export type StoreRootMode = 'configured' | 'env' | 'isolated' | 'default'
+
+export interface StoreRoot {
+  root: string
+  mode: StoreRootMode
+}
+
+function realpathOr(value: string): string {
+  try {
+    return realpathSync.native(value)
+  } catch {
+    return value
+  }
+}
+
 /**
- * Resolve the canonical memories root: config.memoryDir or `<DSH_HOME>/maestro-memory`.
+ * Resolve the canonical memories root and say how it was chosen.
  *
- * The parent `.dsh` is kept deliberately: the core sync publishes to
- * `<dshRoot>/<path>` on the peer, so the store has to stay relative to the DSH
- * home until that model learns a second root (multi-agent batch).
+ * The mode is not decoration: only `default` may move a legacy store, and only
+ * `default` writes markers. A test or a dry-boot that sets its own home must never
+ * migrate the real store, and a caller cannot tell those apart from the path alone.
+ *
+ * The isolation branch exists because production sets `DSH_HOME=<home>/.dsh`, so
+ * "DSH_HOME is set" cannot mean "isolated". It compares real paths instead, and both
+ * sides are realpath'd so a `$HOME` reached through a symlink is not mistaken for an
+ * isolated run (which would freeze the store in place forever).
  */
+export function resolveStoreRoot(
+  opts: { memoryDir?: string | null; env?: NodeJS.ProcessEnv; home?: string } = {},
+): StoreRoot {
+  if (opts.memoryDir) return { root: opts.memoryDir, mode: 'configured' }
+  const env = opts.env ?? process.env
+  const envDir = typeof env.MAESTRO_MEMORY_DIR === 'string' ? env.MAESTRO_MEMORY_DIR.trim() : ''
+  if (envDir) return { root: envDir, mode: 'env' }
+
+  const home = realpathOr(opts.home ?? homedir())
+  const dshDefault = join(home, '.dsh')
+  const rawDsh = typeof env.DSH_HOME === 'string' && env.DSH_HOME.trim() ? env.DSH_HOME.trim() : ''
+  if (rawDsh && realpathOr(rawDsh) !== dshDefault) {
+    return { root: join(rawDsh, 'maestro-memory'), mode: 'isolated' }
+  }
+  return { root: join(home, '.maestro-memory'), mode: 'default' }
+}
+
+/** Resolve just the root, for the many callers that do not care how it was chosen. */
 export function resolveMemoryRoot(memoryDir: string | null | undefined): string {
   if (memoryDir) return memoryDir
-  return join(resolveDshHome(), 'maestro-memory')
+  return resolveStoreRoot().root
 }
 
 /**
