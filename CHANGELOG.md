@@ -23,6 +23,16 @@ multi-agent adapter work comes later.
 - **RPC channels renamed** `/dsh-maestro-memory*` to `/maestro-memory*`. They are
   package-private (client bundle and tests only).
 
+### Fixed
+
+- **The store follows `DSH_HOME`.** `resolveMemoryRoot()` resolved `os.homedir()`
+  directly, so any process carrying its own `DSH_HOME` (a dry-boot, a test run,
+  a second profile) still read and wrote the live store, and the boot migration
+  could move it. It now resolves `<DSH_HOME>/maestro-memory`, falling back to
+  `~/.dsh`, which is the same precedence `dsh-maestro-core` already uses in
+  `paths.ts`. Measured 2026-11-09: a dry-boot ran the real boot migration against
+  the live store before any restart.
+
 ### Unchanged
 
 - Cordis row id `maestro-memory`, tools `memory` / `memory_suggest` /

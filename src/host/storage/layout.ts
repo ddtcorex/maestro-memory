@@ -9,7 +9,22 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Resolve the canonical memories root: config.memoryDir or ~/.dsh/maestro-memory.
+ * The DSH home directory: `DSH_HOME` when set and non-blank, else `~/.dsh`.
+ *
+ * This must be honoured, not inferred. A dry-boot, a test process and any
+ * `DSH_HOME=…` run carry their own home on purpose; resolving `homedir()`
+ * directly means such a process reaches the LIVE store. That is not theory: on
+ * 2026-11-09 a dry-boot ran the boot migration against the real store because
+ * this function did not exist.
+ */
+export function resolveDshHome(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env?.DSH_HOME
+  if (typeof raw === 'string' && raw.trim().length > 0) return raw.trim()
+  return join(homedir(), '.dsh')
+}
+
+/**
+ * Resolve the canonical memories root: config.memoryDir or `<DSH_HOME>/maestro-memory`.
  *
  * The parent `.dsh` is kept deliberately: the core sync publishes to
  * `<dshRoot>/<path>` on the peer, so the store has to stay relative to the DSH
@@ -17,7 +32,7 @@ import { join } from 'node:path'
  */
 export function resolveMemoryRoot(memoryDir: string | null | undefined): string {
   if (memoryDir) return memoryDir
-  return join(homedir(), '.dsh', 'maestro-memory')
+  return join(resolveDshHome(), 'maestro-memory')
 }
 
 /** 12-hex project hash for a cwd (sha1(cwd).slice(0,12)) */

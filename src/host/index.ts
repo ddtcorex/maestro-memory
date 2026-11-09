@@ -13,7 +13,7 @@ import { buildFeedbackLine } from './memory/feedback.ts'
 import { TodoStore, resolveQuadrant } from './todo/store.ts'
 import { TODO_TARGETS, TODO_STATUSES } from './storage/legacy-format.ts'
 import { SuggestionQueue, enqueueSuggestion, approveSuggestions, rejectSuggestions } from './review/queue.ts'
-import { resolveMemoryRoot, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
+import { resolveMemoryRoot, resolveDshHome, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
 import { migrateMemoryRoot, hasMigrationMarker } from './storage/migrate.ts'
 import { appendEntryAtomicSync } from './storage/atomic-store.ts'
 import { SyncService } from './sync/service.ts'
@@ -103,7 +103,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
   // Move the pre-4.0 store root before anything reads it, so no reader ever
   // sees a half-moved tree. Idempotent; refuses rather than merges when both
   // the old and the new directory exist, because that is a human decision.
-  const migration = migrateMemoryRoot({ memoryDir: config.memoryDir ?? null })
+  const migration = migrateMemoryRoot({ memoryDir: config.memoryDir ?? null, dshHome: resolveDshHome() })
   if (migration.status === 'refused' || migration.status === 'failed') {
     const line = `[maestro-memory] store migration ${migration.status}: ${migration.reason} (from ${migration.from} to ${migration.to})`
     try {

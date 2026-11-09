@@ -138,6 +138,19 @@ describe('migrateMemoryRoot', () => {
     expect(existsSync(custom)).toBe(false)
   })
 
+  it('migrates inside DSH_HOME, never the real home, when one is given', () => {
+    const dshHome = join(home, 'isolated-dsh')
+    seed(join(dshHome, LEGACY_ROOT_NAME), { 'MEMORY.md': 'a' })
+
+    const res = migrateMemoryRoot({ home, dshHome })
+
+    expect(res.status).toBe('migrated')
+    expect(res.to).toBe(join(dshHome, 'maestro-memory'))
+    expect(existsSync(join(dshHome, 'maestro-memory', 'MEMORY.md'))).toBe(true)
+    // Nothing was created at the OS-home path this time.
+    expect(existsSync(join(home, '.dsh', 'maestro-memory'))).toBe(false)
+  })
+
   it('records what it did in the marker', () => {
     seed(legacyRoot(), { 'MEMORY.md': 'a' })
 

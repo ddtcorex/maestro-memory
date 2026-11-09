@@ -54,8 +54,10 @@ interface Inventory {
 }
 
 export interface MigrateParams {
-  /** Home directory; injected by tests. */
+  /** OS home directory; ignored when `dshHome` is given. Injected by tests. */
   home?: string
+  /** The DSH home (`DSH_HOME`), when the caller already resolved it. */
+  dshHome?: string
   /** `config.memoryDir`. When set to a custom path the store is not ours to move. */
   memoryDir?: string | null
   /** Rename primitive; injected by tests to simulate EXDEV and permission errors. */
@@ -105,11 +107,11 @@ function writeMarker(target: string, payload: Record<string, unknown>): string |
  * Runs before the first store read, so no reader ever sees a half-moved tree.
  */
 export function migrateMemoryRoot(params: MigrateParams = {}): MigrationResult {
-  const home = params.home ?? homedir()
-  const defaultRoot = join(home, '.dsh', CURRENT_ROOT_NAME)
+  const base = params.dshHome ?? join(params.home ?? homedir(), '.dsh')
+  const defaultRoot = join(base, CURRENT_ROOT_NAME)
   const configured = params.memoryDir ?? null
   const target = configured ?? defaultRoot
-  const from = join(home, '.dsh', LEGACY_ROOT_NAME)
+  const from = join(base, LEGACY_ROOT_NAME)
 
   // A custom memoryDir is the operator's own arrangement; leave it alone.
   if (configured && configured !== defaultRoot) {
