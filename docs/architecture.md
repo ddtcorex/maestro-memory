@@ -1,12 +1,12 @@
-# dsh-maestro-memory — Architecture (M0 seam audit)
+# maestro-memory — Architecture (M0 seam audit)
 
-> **Canonical umbrella:** `docs/architecture.md` at the workspace root is the authoritative cross-repo map. This file is the **M0 seam audit** for `dsh-maestro-memory` specifically — it records the exact DSH surfaces this plugin owns and how they are injected. The workspace spec `<workspace-root>/docs/specs/2026-08-30-dsh-maestro-memory-spec.md` is the source-of-truth spec; `dsh-maestro-memory/README.md` is the operator guide.
+> **Canonical umbrella:** `docs/architecture.md` at the workspace root is the authoritative cross-repo map. This file is the **M0 seam audit** for `maestro-memory` specifically — it records the exact DSH surfaces this plugin owns and how they are injected. The workspace spec `<workspace-root>/docs/specs/2026-08-30-dsh-maestro-memory-spec.md` is the source-of-truth spec; `maestro-memory/README.md` is the operator guide.
 
 ## 1. Package & profile
 
-- **Package:** `@ddtcorex/dsh-maestro-memory` (`cordis.patch.yml` id `maestro-memory`)
-- **Install:** `dsh plugin --profile web add link:<workspace-root>/packages/dsh-maestro-memory` (dev) or `github:ddtcorex/dsh-maestro-memory#<sha>` (prod — pin to exact SHA, branch tarballs are stale per `AGENTS.md` pnpm pitfall)
-- **Profile rule:** exactly one owner for each compatibility tool (`memory`/`maestro_todo`/`memory_suggest`); do not keep the earlier memory plugin and `dsh-maestro-memory` in the same profile
+- **Package:** `@ddtcorex/maestro-memory` (`cordis.patch.yml` id `maestro-memory`)
+- **Install:** `dsh plugin --profile web add link:<workspace-root>/packages/maestro-memory` (dev) or `github:ddtcorex/maestro-memory#<sha>` (prod — pin to exact SHA, branch tarballs are stale per `AGENTS.md` pnpm pitfall)
+- **Profile rule:** exactly one owner for each compatibility tool (`memory`/`maestro_todo`/`memory_suggest`); do not keep the earlier memory plugin and `maestro-memory` in the same profile
 
 ## 2. Host — Cordis seams (M0 audit)
 
@@ -16,7 +16,7 @@ All registrations are via `ctx.effect(() => disposer, label)` so `stop`/`update`
 |---|---|---|---|
 | `ctx.tools.register` | `memory`, `maestro_todo`, `memory_suggest` | `ctx.effect(() => ctx.tools.register(defineTool({name, description, parameters, execute})), 'maestro-memory: tool')` | Content output via `CONTENT_OUTPUT` schema `{content:{type:array,required:true}}` |
 | `ctx.systemPrompt.context` | Bounded snapshot `USER + global MEMORY + current-project KEY` + session header + discipline note | `{name:'memory:snapshot', order: config.snapshotOrder ?? 500, text:(ctx)=>renderSnapshot(store,{cwd,branch,sessionId,sessionName})}` | `renderSnapshot` pure in `src/host/prompt/snapshot.ts`; `daily`/`project` logs never injected; branch-filtered via `store.list('key',cwd,{branch})` |
-| `ctx.connection.rpc.handle` | Package-private RPC `/dsh-maestro-memory` | `conn = ctx.connection ?? ctx.get('connection'); if (!conn?.rpc?.handle) no-op` | Endpoints: `queue.list/decide`, `memory.list/mutate`, `todo.list/mutate`, `status`, `sync.*`, `skills.list` |
+| `ctx.connection.rpc.handle` | Package-private RPC `/maestro-memory` | `conn = ctx.connection ?? ctx.get('connection'); if (!conn?.rpc?.handle) no-op` | Endpoints: `queue.list/decide`, `memory.list/mutate`, `todo.list/mutate`, `status`, `sync.*`, `skills.list` |
 | `ctx.workspaceRegistry` (injected) | Resolve `cwd` for project-hash isolation when `exec.agent.session.header.cwd` is absent | `inject = ['tools','systemPrompt','connection']` (workspaceRegistry available via `ctx.get`) | Hash = `sha1(cwd)[:12]` via `storage/layout.ts:projectHash` |
 
 Compatibility matrix (M0): no core owner for `memory`/`maestro_todo`/`memory_suggest` was found in `deepseek-harness/packages/todo/tool-todo` (owns only `todo_write`) or `skill/tool-skill` (owns `skill`). If DSH core later claims one of these names, rollout must pause and choose "configure-off in profile" or "narrow adapter" — do not shadow.
@@ -32,7 +32,7 @@ Compatibility matrix (M0): no core owner for `memory`/`maestro_todo`/`memory_sug
 
 - **Injects:** `dsh-client-ui-slots` only (`dsh.client.inject` in `package.json`); `locale` and `conversation` are peers
 - **Slot:** single `conversation.view` `{name:'conversation.view', id:'maestro-memory', order:40, label:()=>'Memory'}` with internal tabs **Memory / Queue / Todo / Skills / Health** (sync is host and RPC only, no client tab)
-- **RPC:** `useRpc = (ep,payload)=>conn.rpc.call('/dsh-maestro-memory',ep,payload)`; refresh after mutation and on `connection/reset`; no fetch to `/memory-evolve`, no mutation observer
+- **RPC:** `useRpc = (ep,payload)=>conn.rpc.call('/maestro-memory',ep,payload)`; refresh after mutation and on `connection/reset`; no fetch to `/memory-evolve`, no mutation observer
 
 ## 5. File map
 

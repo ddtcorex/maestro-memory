@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-11-09
+
+The plugin leaves the `dsh-maestro-*` suite and becomes `maestro-memory`, so the
+store no longer reads as DSH-only. Behaviour is unchanged in this release; the
+multi-agent adapter work comes later.
+
+### Changed
+
+- **Package renamed** from `@ddtcorex/dsh-maestro-memory` to `@ddtcorex/maestro-memory`.
+  The old npm name stays published and is deprecated with a pointer to the new one.
+- **Repository moved** from `ddtcorex/dsh-maestro-memory` to `ddtcorex/maestro-memory`
+  and out of the coordination workspace into its own checkout.
+- **Data root renamed** from `~/.dsh/dsh-maestro-memory` to `~/.dsh/maestro-memory`.
+  A one-time migration at boot moves the directory and leaves a `migrated-v4`
+  marker; it refuses to act when both directories exist, so it never merges or
+  deletes live data.
+- **RPC channels renamed** `/dsh-maestro-memory*` to `/maestro-memory*`. They are
+  package-private (client bundle and tests only).
+
+### Unchanged
+
+- Cordis row id `maestro-memory`, tools `memory` / `memory_suggest` /
+  `maestro_todo`, prompt contexts `memory:snapshot` and `memory:task-systems`,
+  the client slot id, and the `memoryDir` config key.
+
 ## [3.0.1] - 2026-10-29
 
 Memory view fixes from the 2026-10-28 design audit (19 findings measured live on

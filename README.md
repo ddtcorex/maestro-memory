@@ -1,10 +1,11 @@
-# dsh-maestro-memory
+# maestro-memory
 
-Durable memory and todos for DeepSeek Harness (DSH) — preserves `~/.dsh/memories` in place.
+Durable memory and todos, stored as plain markdown under `~/.dsh/maestro-memory`, shipped as a
+DeepSeek Harness (DSH) plugin. The store itself is harness-neutral; the DSH binding is one adapter.
 
 > Give the AI cross-session durable memory and todos — the more you use it, the more it understands you.
 
-- **Package:** `@ddtcorex/dsh-maestro-memory` (`cordis.patch.yml` id `maestro-memory`)
+- **Package:** `@ddtcorex/maestro-memory` (`cordis.patch.yml` id `maestro-memory`)
 - **Version:** see `package.json` · **Changelog:** `CHANGELOG.md`
 
 ## Requirements
@@ -23,18 +24,18 @@ pnpm test        # vitest run
 **DSH profile (operator):**
 
 ```sh
-dsh plugin --profile web add link:<workspace-root>/packages/dsh-maestro-memory
-# production: dsh plugin --profile web add github:ddtcorex/dsh-maestro-memory#<tag-or-sha>
+dsh plugin --profile web add link:<path-to>/maestro-memory
+# production: dsh plugin --profile web add github:ddtcorex/maestro-memory#<tag-or-sha>
 ```
 
-`cordis.patch.yml` is shipped with the package, including a `connection` entry that declares `webServer` (DSH 0.2.x needs it before `rpc.handle` can register a channel). Do not duplicate it in the profile. Pin a release with `@ddtcorex/dsh-maestro-memory@<version>` when installing from npm, and run `pnpm install && pnpm build` after every `git pull` of a `link:` checkout.
+`cordis.patch.yml` is shipped with the package, including a `connection` entry that declares `webServer` (DSH 0.2.x needs it before `rpc.handle` can register a channel). Do not duplicate it in the profile. Pin a release with `@ddtcorex/maestro-memory@<version>` when installing from npm, and run `pnpm install && pnpm build` after every `git pull` of a `link:` checkout.
 
 ```yaml
 - insert:
     - id: maestro-memory
-      name: '@ddtcorex/dsh-maestro-memory'
+      name: '@ddtcorex/maestro-memory'
       config:
-        memoryDir: null      # -> ~/.dsh/memories
+        memoryDir: null      # -> ~/.dsh/maestro-memory
         snapshotOrder: 500
         autoMemory: { enabled: false, userMessage: true, desensitize: true } # opt-in
         writeGuard: { enabled: false, threshold: 2 }  # per-turn write watchdog, opt-in
@@ -72,7 +73,7 @@ owned the 2,048-byte section and pushed every other entry out of the prompt.
 **Cost reporting.** `renderSnapshotWithStats` (the renderer behind
 `memory:snapshot`) reports the bytes, entry count and excluded-entry count of
 every section. The host keeps the last 50 renders in memory and returns them as
-`cost` on `/dsh-maestro-memory-health`: `samples`, `last`, `medianTotalBytes`,
+`cost` on `/maestro-memory-health`: `samples`, `last`, `medianTotalBytes`,
 `maxTotalBytes`, `medianBySection`. Entry text is never retained — byte counts
 only.
 
@@ -115,9 +116,9 @@ no cwd. The model's `key` gate is `exec.agent`-scoped on the host, so it stays i
 force — a human writing `key` here is equivalent to approving a queued
 suggestion.
 
-RPC: `/dsh-maestro-memory` + loopback `/dsh-maestro-memory-health` + `/dsh-maestro-memory-propose`.
+RPC: `/maestro-memory` + loopback `/maestro-memory-health` + `/maestro-memory-propose`.
 
-Maintenance endpoints on `/dsh-maestro-memory` (both **preview-first**: `dryRun`
+Maintenance endpoints on `/maestro-memory` (both **preview-first**: `dryRun`
 defaults to `true` and an actual write needs `confirm: true`):
 
 | Endpoint | What it does |

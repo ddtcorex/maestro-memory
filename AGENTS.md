@@ -1,4 +1,4 @@
-# AGENTS.md — dsh-maestro-memory
+# AGENTS.md — maestro-memory
 
 > `CLAUDE.md` at the repo root is a symlink to `AGENTS.md`. Claude Code follows the same rule set as Codex CLI. Only edit `AGENTS.md` — never edit `CLAUDE.md` directly or replace the symlink with a copy.
 
@@ -6,13 +6,13 @@
 
 Durable memory + todos + bounded system-prompt snapshot plugin for the DeepSeek Harness (DSH). One Cordis row (`id: maestro-memory`) with a host half (Node) and a client half (browser Memory view: Memory, Queue, Todo, Skills and Health tabs; sync is host and RPC only, it has no client tab).
 
-Names by boundary: npm package = `@ddtcorex/dsh-maestro-memory`; Cordis patch row id = `maestro-memory`.
+Names by boundary: npm package = `@ddtcorex/maestro-memory`; Cordis patch row id = `maestro-memory`.
 
-Part of the Maestro Harness suite (installed as a DSH plugin). Originally forked from an upstream layered-memory plugin; maintained standalone at `ddtcorex/dsh-maestro-memory` since 2026-08-26 (the `upstream` remote has been removed).
+Part of the Maestro Harness suite (installed as a DSH plugin). Originally forked from an upstream layered-memory plugin; maintained standalone at `ddtcorex/maestro-memory` since 2026-08-26 (the `upstream` remote has been removed).
 
 ## Layout
 
-- `src/host/index.ts` — host `apply()`: registers the `memory` + `memory_suggest` + `maestro_todo` tools, the `memory:snapshot` and `memory:task-systems` systemPrompt contexts (order `snapshotOrder ?? 500`), and the `/dsh-maestro-memory` RPC channel.
+- `src/host/index.ts` — host `apply()`: registers the `memory` + `memory_suggest` + `maestro_todo` tools, the `memory:snapshot` and `memory:task-systems` systemPrompt contexts (order `snapshotOrder ?? 500`), and the `/maestro-memory` RPC channel.
 - `src/host/memory/store.ts` — `MaestroMemoryStore` over five tracks (`memory`/`user`/`project`/`key`/`daily`): add/list/replace/remove/archive/expand + `snapshot`.
 - `src/host/todo/store.ts` — `TodoStore` (four tracks, quadrant/due/status, smart view).
 - `src/host/prompt/snapshot.ts` — `renderSnapshot(store, ctx, opts)`: bounded snapshot (USER + MEMORY + KEY + Project Context auto-recall + bounded Recent Daily + REFERENCE slice) with session header, the end-of-turn discipline note, the optional write-backlog alert, and the subagent cadence variant.
@@ -40,7 +40,7 @@ pnpm build    # tsc host + client && node scripts/build-client.mjs  -> lib/
 
 ## Git workflow
 
-- Default branch `master`. No direct commits to `master` — use `feat/<topic>` / `fix/<topic>` and a PR against `ddtcorex/dsh-maestro-memory`.
+- Default branch `master`. No direct commits to `master` — use `feat/<topic>` / `fix/<topic>` and a PR against `ddtcorex/maestro-memory`.
 - Conventional commits, imperative mood (`feat:`, `fix:`, `docs:`, `chore:`).
 - One TDD task = one commit; never commit while `pnpm verify` is red.
 - When the base moves, rebase the feature branch onto `origin/master` (single-origin workflow; there is no upstream remote).

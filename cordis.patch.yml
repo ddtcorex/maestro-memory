@@ -1,4 +1,4 @@
-# dsh-maestro-memory bundle patch: inserts the host row into the profile's
+# maestro-memory bundle patch: inserts the host row into the profile's
 # plugin roster. The browser half rides the package's `dsh.client` manifest
 # (the client registry serves lib/client.js), and this row materializes the
 # Maestro memory / todos host plugin on boot.
@@ -7,7 +7,7 @@
 # profile patch (duplicate ids crash the loader).
 - insert:
     - id: maestro-memory
-      name: '@ddtcorex/dsh-maestro-memory'
+      name: '@ddtcorex/maestro-memory'
       # rpc.handle registers a webServer route inside an effect fiber which carries
       # only the row's inject (not the module's); without webServer the row fails
       # on harnesses that provide webServer after rows apply (DSH 0.1.5-rc.1+); on DSH 0.2.x it is not sufficient on its own, see the `connection` entry at the end of this file.
