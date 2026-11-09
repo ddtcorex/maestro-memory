@@ -364,7 +364,7 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         'Search the durable memory store by words, across key/project/daily/memory/user. Use this when the answer might live in an older entry the prompt does not show; `memory list` is for browsing one track, this is for finding by meaning-of-words. Returns compact hits (id, track, date, score, preview); pass `id` to open one entry in full.',
       parameters: {
         query: { type: 'string', description: 'Plain words. No regex and no query language; diacritics are optional.' },
-        tracks: { type: 'string', description: 'Comma-separated tracks to search: key,project,daily,memory,user. Default key,project.' },
+        tracks: { type: 'string', description: 'Comma-separated tracks to search: key,project,daily,memory,user. Default key,project,memory,user (daily is opt-in: it is mostly turn noise).' },
         cwd: { type: 'string', description: 'Working directory; required for the key and project tracks.' },
         limit: { type: 'integer', description: 'Max hits, default 8, capped at 25.' },
         id: { type: 'string', description: 'Open one entry in full by its 8-hex id instead of searching.' },
@@ -392,7 +392,10 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
           if (tracks && !cwd && (tracks.includes('key') || tracks.includes('project'))) {
             return { content: [{ type: 'text', text: 'cwd is required for the key and project tracks (pass cwd, or restrict tracks)' }] }
           }
-          const effectiveTracks = tracks ?? (cwd ? undefined : ['memory', 'user', 'daily'])
+          // Default scope: the curated tracks. `daily` is 2,381 of the 4,039
+          // live entries and is mostly turn noise, so it is opt-in: searching it
+          // by default tripled the first-query index build for little return.
+          const effectiveTracks = tracks ?? (cwd ? ['key', 'project', 'memory', 'user'] : ['memory', 'user'])
           const limit = Number.isFinite(Number(args.limit)) ? Number(args.limit) : undefined
           const hits = search.query(query, { cwd, tracks: effectiveTracks, limit })
           if (!hits.length) return { content: [{ type: 'text', text: `no match for ${JSON.stringify(query)}` }] }

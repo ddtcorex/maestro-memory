@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-11-09
+
+The store outgrew the prompt: 4,039 entries across 130 files, of which the key
+lane shows 12 (about 1.6%). This release makes the rest reachable.
+
+### Added
+
+- **`memory_search`, a new tool.** BM25 over the entries with a diacritics-stripped
+  twin for every token, so `danh sach` finds `danh sách`. Compact hits by default
+  (`id  track  date  score  preview`), and `id` opens one entry in full. The index
+  is built lazily and rebuilt only when the store fingerprint changes; measured on
+  the live store, the first query costs 76 ms and a cached query 19 ms.
+  Default scope is `key,project,memory,user`; `daily` is opt-in because it is
+  2,381 of the entries and mostly turn noise.
+- **A key index lane in the snapshot.** Entries the key lane did not inject are
+  listed by id and summary, newest first, inside a 768-byte budget (measured 692
+  bytes on the live store). The discipline note stays last and untouched.
+
+### Unchanged
+
+- Snapshot caps, the write watchdog, gated writes, the five tracks, and the
+  `memory` tool's actions.
+
 ## [4.0.0] - 2026-11-09
 
 The plugin leaves the `dsh-maestro-*` suite and becomes `maestro-memory`, so the

@@ -88,6 +88,12 @@ describe('the memory_search tool', () => {
     expect(out).not.toContain('dddddddd')
   })
 
+  it('leaves the daily track out of the default scope but reaches it on request', async () => {
+    await seed({ 'daily/2026-09-02.md': '[2026-09-02] [id:dddddddd] shared word' })
+    expect(await run({ query: 'shared', cwd: CWD })).not.toContain('dddddddd')
+    expect(await run({ query: 'shared', cwd: CWD, tracks: 'daily' })).toContain('dddddddd')
+  })
+
   it('asks for a cwd when a cwd-scoped track is requested', async () => {
     await seed({ 'MEMORY.md': '[2026-09-01] [id:aaaaaaaa] shared word' })
     const out = await run({ query: 'shared', cwd: CWD })

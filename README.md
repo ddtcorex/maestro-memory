@@ -51,6 +51,7 @@ host restart. `threshold` counts consecutive *working* human turns with no
 |------|---------|
 | `memory` | Five tracks `memory`/`user`/`project`/`key`/`daily` + archive/expand. `key` is gated via `memory_suggest`. |
 | `maestro_todo` | Durable cross-session todo store (four tracks `life`/`work`/`project`/`daily` with ids, smart view max 8). Named apart from the harness's own in-session task list `todo_write`. |
+| `memory_search` | Word search across the store (BM25, diacritics-insensitive). Compact hits by default; pass `id` to open one entry in full. |
 | `memory_suggest` | Gated proposals to `SUGGESTIONS.jsonl` — requires human approve. |
 
 `memory` sanitizes sensitive fragments (`[Filtered:API key/password/token/ID/phone]`, pure credential → `content filtered`).
