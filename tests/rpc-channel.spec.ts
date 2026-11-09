@@ -5,15 +5,15 @@ const CHANNEL_RE = /^\/[A-Za-z0-9._~-]+$/
 
 describe('RPC channel names — Cordis assertChannel', () => {
   it('known channels match regex', () => {
-    expect('/dsh-maestro-memory').toMatch(CHANNEL_RE)
-    expect('/dsh-maestro-memory-health').toMatch(CHANNEL_RE)
-    expect('/dsh-maestro-memory-propose').toMatch(CHANNEL_RE)
+    expect('/maestro-memory').toMatch(CHANNEL_RE)
+    expect('/maestro-memory-health').toMatch(CHANNEL_RE)
+    expect('/maestro-memory-propose').toMatch(CHANNEL_RE)
   })
 
   it('invalid channels fail regex (would crash dsh web)', () => {
     expect('/maestro-memory/health').not.toMatch(CHANNEL_RE)
     expect('/maestro-memory/propose').not.toMatch(CHANNEL_RE)
-    expect('/dsh-maestro-memory/health').not.toMatch(CHANNEL_RE)
+    expect('/maestro-memory/health').not.toMatch(CHANNEL_RE)
   })
 
   it('src files contain no invalid channel literals', () => {

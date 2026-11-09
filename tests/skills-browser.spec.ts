@@ -253,7 +253,7 @@ describe('M6 skills-browser: RPC read-only integration', () => {
       systemPrompt: { context: () => () => {} },
       workspaceRegistry: {},
       connection: { rpc: { handle: (ch: string, h: any) => {
-        if (ch === '/dsh-maestro-memory') {
+        if (ch === '/maestro-memory') {
           handler = async (endpoint: string, payload: any) => (await h(endpoint, payload, new AbortController().signal)).value
         }
         return () => {}

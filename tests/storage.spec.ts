@@ -63,9 +63,23 @@ describe('layout', () => {
     expect(() => legacyProjectHash('')).toThrow()
     expect(() => projectDir('/root', '')).toThrow()
   })
+  it('honours DSH_HOME so a dry-boot or a test process cannot reach the live store', () => {
+    const previous = process.env.DSH_HOME
+    try {
+      process.env.DSH_HOME = '/tmp/isolated-dsh-home'
+      expect(resolveMemoryRoot(null)).toBe('/tmp/isolated-dsh-home/maestro-memory')
+      expect(resolveMemoryRoot(undefined)).toBe('/tmp/isolated-dsh-home/maestro-memory')
+      expect(resolveMemoryRoot('/custom')).toBe('/custom')
+      process.env.DSH_HOME = '   '
+      expect(resolveMemoryRoot(null)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+    }
+  })
   it('resolves root default', () => {
-    expect(resolveMemoryRoot(null as any)).toMatch(/\.dsh\/dsh-maestro-memory/)
-    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.dsh', 'dsh-maestro-memory'))
+    expect(resolveMemoryRoot(null as any)).toMatch(/\.dsh\/maestro-memory/)
+    expect(resolveMemoryRoot(undefined)).toBe(join(homedir(), '.dsh', 'maestro-memory'))
     expect(resolveMemoryRoot('/custom')).toBe('/custom')
   })
   it('resolves five memory files', () => {

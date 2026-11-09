@@ -1,10 +1,10 @@
-# Contributing to dsh-maestro-memory
+# Contributing to maestro-memory
 
-Thank you for contributing to **dsh-maestro-memory** (`@ddtcorex/dsh-maestro-memory`) — durable layered memory (global / user / project / branch / daily), confirmation-gated writes, todos and skills for DeepSeek Harness, packaged as a Cordis plugin.
+Thank you for contributing to **maestro-memory** (`@ddtcorex/maestro-memory`) — durable layered memory (global / user / project / branch / daily), confirmation-gated writes, todos and skills for DeepSeek Harness, packaged as a Cordis plugin.
 
 ## Getting Started
 
-1. **Fork and clone** `github.com/ddtcorex/dsh-maestro-memory`.
+1. **Fork and clone** `github.com/ddtcorex/maestro-memory`.
 2. Install dependencies (requires Node.js 22+, pnpm 11+):
 
    ```bash
@@ -93,7 +93,7 @@ This project follows the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUC
 
 - General questions: open a GitHub Discussion or issue.
 - Contact maintainer: [kaido4492@gmail.com](mailto:kaido4492@gmail.com)
-- Security vulnerabilities: use GitHub's private advisory reporting at `https://github.com/ddtcorex/dsh-maestro-memory/security/advisories` — do not file a public issue.
+- Security vulnerabilities: use GitHub's private advisory reporting at `https://github.com/ddtcorex/maestro-memory/security/advisories` — do not file a public issue.
 
 ## License
 

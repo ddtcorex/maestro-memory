@@ -235,7 +235,7 @@ describe('M3-PR-A todo four tracks + IDs', () => {
   it('RPC todo.list and todo.mutate', async () => {
     const ctx = fakeCtx(root)
     apply(ctx, { memoryDir: root })
-    const handler = ctx.state.rpcHandlers.get('/dsh-maestro-memory')
+    const handler = ctx.state.rpcHandlers.get('/maestro-memory')
     expect(handler).toBeDefined()
     let res: any = await handler('todo.mutate', { action: 'add', target: 'work', content: 'rpc task' })
     expect(res.ok).toBe(true)
