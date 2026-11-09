@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-11-09
+
+The store is no longer reachable only from DSH. An MCP server exposes the same files to Claude Code,
+Codex and Cursor.
+
+### Added
+
+- **`maestro-memory-mcp`, a stdio MCP server** over the same store, index and snapshot renderer, so
+  the two bindings cannot drift: hit formatting, the default track set and the refusal strings live in
+  one module both call.
+- Five tools: `memory_search`, `memory_context`, `memory_list`, `memory_add`, `memory_suggest`. The
+  `key` track stays gated: `memory_add` refuses it, `memory_suggest` queues it.
+- `memory_add` answers with the three nearest existing entries, so a near-duplicate is visible at
+  write time instead of quietly crowding the key lane weeks later.
+
+### Fixed
+
+- **`projectHash()` normalises through `realpathSync.native`.** An agent launched through a symlink now
+  writes to the same project bucket as one launched on the real path, instead of silently starting a
+  second one.
+
 ## [4.1.0] - 2026-11-09
 
 The store outgrew the prompt: 4,039 entries across 130 files, of which the key

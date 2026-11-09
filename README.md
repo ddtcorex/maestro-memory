@@ -56,6 +56,43 @@ host restart. `threshold` counts consecutive *working* human turns with no
 
 `memory` sanitizes sensitive fragments (`[Filtered:API key/password/token/ID/phone]`, pure credential → `content filtered`).
 
+## Other agents (MCP)
+
+The store is harness-neutral; DSH is one binding, MCP is the other. Any client that speaks MCP reads
+and appends the same files, with the same ranking and the same bounded context.
+
+```sh
+node <checkout>/lib/mcp/main.js          # or: maestro-memory-mcp, once installed
+```
+
+Wire it once per client:
+
+```json
+// Claude Code: ~/.claude.json (or the project's .mcp.json)
+{ "mcpServers": { "maestro-memory": { "command": "node", "args": ["<checkout>/lib/mcp/main.js"] } } }
+```
+
+```toml
+# Codex: ~/.codex/config.toml
+[mcp_servers.maestro-memory]
+command = "node"
+args = ["<checkout>/lib/mcp/main.js"]
+```
+
+```json
+// Cursor: ~/.cursor/mcp.json
+{ "mcpServers": { "maestro-memory": { "command": "node", "args": ["<checkout>/lib/mcp/main.js"] } } }
+```
+
+Five tools: `memory_search`, `memory_context`, `memory_list`, `memory_add`, `memory_suggest`. The
+`key` track stays gated: `memory_add` refuses it and `memory_suggest` queues it for human approval,
+exactly as in DSH.
+
+**Start a session with `memory_context`.** Clients with a session-start hook (Claude Code) can call it
+automatically; the rest call it as their first tool use and get the same bounded context DSH injects.
+The store root follows `DSH_HOME` when set, so a test or a second profile can never touch the live
+store.
+
 ## System Prompt Snapshot
 
 `memory:snapshot` (order 500) injects bounded deterministic context:
