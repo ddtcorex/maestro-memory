@@ -66,6 +66,18 @@ describe('migrateMemoryRoot v5', () => {
     expect(JSON.parse(readFileSync(join(root, '.maestro-memory', 'migrated-v5.json'), 'utf8')).from).toBeNull()
   })
 
+  it('narrows a moved store to 0700 instead of inheriting the source mode', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'mig-dsh8-'))
+    const home = mkdtempSync(join(tmpdir(), 'mig-home8-'))
+    const source = join(dshHome, 'maestro-memory')
+    seedStore(source)
+    require('node:fs').chmodSync(source, 0o775)
+    const root = join(home, '.maestro-memory')
+    expect(migrateMemoryRoot({ root, mode: 'default', dshHome }).status).toBe('moved')
+    expect(statSync(root).mode & 0o777).toBe(0o700)
+    expect(statSync(join(root, '.maestro-memory')).mode & 0o777).toBe(0o700)
+  })
+
   it('is a no-op once the store carries the v5 marker', () => {
     const dshHome = mkdtempSync(join(tmpdir(), 'mig-dsh6-'))
     const home = mkdtempSync(join(tmpdir(), 'mig-home6-'))

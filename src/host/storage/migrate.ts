@@ -18,6 +18,7 @@
  */
 
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -178,6 +179,14 @@ export function migrateMemoryRoot(params: MigrateParams): MigrationResult {
         reason: `integrity check failed (${after.files}/${after.bytes} of ${before.files}/${before.bytes})`,
       }
     }
+
+    // A moved store inherits the source mode, and at $HOME there is no 0700 parent to
+    // protect it any more. Both directories are narrowed here, before any marker lands.
+    try {
+      chmodSync(target, 0o700)
+      mkdirSync(maestroMetaDir(target), { recursive: true, mode: 0o700 })
+      chmodSync(maestroMetaDir(target), 0o700)
+    } catch {}
 
     // Both markers are written, in that order: readers that only know v4 keep working,
     // and the presence of v5 is what says the move finished.
