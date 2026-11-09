@@ -16,7 +16,8 @@ import { TodoStore, resolveQuadrant } from './todo/store.ts'
 import { TODO_TARGETS, TODO_STATUSES } from './storage/legacy-format.ts'
 import { SuggestionQueue, enqueueSuggestion, approveSuggestions, rejectSuggestions } from './review/queue.ts'
 import { resolveStoreRoot, resolveDshHome, suggestionsPath, globalArchivePath, userArchivePath, projectKeyArchivePath, todoArchivePath, maestroMetaDir } from './storage/layout.ts'
-import { migrateMemoryRoot, hasMigrationMarker } from './storage/migrate.ts'
+import { migrateMemoryRoot } from './storage/migrate.ts'
+import { readHealth } from './storage/health.ts'
 import { appendEntryAtomicSync } from './storage/atomic-store.ts'
 import { SyncService } from './sync/service.ts'
 import { RealGitAdapter } from './sync/git.ts'
@@ -873,11 +874,17 @@ export function apply(ctx: any, config: MaestroMemoryConfig = {}): void {
         const cost = costTracker.snapshot()
         // Where the store actually lives, and whether this machine has been moved
         // to the 4.0 root. A half-migrated machine must be visible, not silent.
+        const markerState = readHealth({ root })
         const migrationInfo = {
           root,
+          mode: resolved.mode,
           status: migration.status,
           method: migration.method ?? null,
-          marker: hasMigrationMarker(root),
+          // Both markers travel: v4 records the package rename, v5 records the move out
+          // of the DSH home. `marker` stays as the v4 alias the Memory view already reads.
+          marker: markerState.markerV4,
+          markerV4: markerState.markerV4,
+          markerV5: markerState.markerV5,
           legacyRoot: migration.from,
         }
         const cwdRaw = (payload && typeof payload.cwd === 'string' && payload.cwd.trim()) ? payload.cwd.trim() : ''
