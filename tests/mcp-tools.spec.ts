@@ -15,7 +15,9 @@ afterEach(() => {
 function seed(rel: string, body: string): void {
   const full = join(root, rel)
   mkdirSync(join(full, '..'), { recursive: true })
-  writeFileSync(full, body)
+  // The store refuses to write over a non-canonical file, so fixtures end with
+  // the canonical trailing newline isCanonical() requires.
+  writeFileSync(full, body.endsWith('\n') ? body : `${body}\n`)
 }
 
 describe('mcp tool layer', () => {
@@ -52,6 +54,14 @@ describe('mcp tool layer', () => {
   it('never writes without a cwd on a cwd-scoped track', () => {
     const h = createToolHandlers({ root })
     expect(h.add({ target: 'project', content: 'x' }).text).toMatch(/cwd/)
+  })
+
+  it('shows the nearest existing entries after a write', () => {
+    const h = createToolHandlers({ root })
+    seed('MEMORY.md', '[2026-09-01] [id:aaaaaaaa] always run phpcs on internal api before commit')
+    const out = h.add({ target: 'memory', content: 'run phpcs on internal api before committing' })
+    expect(out.text).toContain('added')
+    expect(out.text).toContain('aaaaaaaa')
   })
 
   it('renders session-free context from a cwd', () => {

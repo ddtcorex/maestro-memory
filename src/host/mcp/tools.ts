@@ -47,6 +47,17 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
   const search = createStoreSearch({ root: opts.root })
   const queue = opts.queue ?? new SuggestionQueue(suggestionsPath(opts.root))
 
+  /** Up to three existing entries that read like the one just written. */
+  function nearestNote(content: string, justAddedId: string): string {
+    try {
+      const hits = search.query(content.slice(0, 200), { cwd: null, tracks: ['memory', 'user'], limit: 3 })
+      const others = hits.filter((hit) => hit.id !== justAddedId)
+      return others.map(formatHit).join('\n')
+    } catch {
+      return ''
+    }
+  }
+
   return {
     search(args) {
       const cwd = asCwd(args.cwd)
@@ -105,7 +116,13 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       const res = store.add(target as any, content, cwd ?? undefined, addOpts as any)
       if (!res.ok) return { text: `add failed: ${res.error}` }
       if ((res as any).duplicate) return { text: 'duplicate: an identical entry already exists' }
-      return { text: `added ${(res as any).id ?? ''}`.trim() }
+      const head = `added ${(res as any).id ?? ''}`.trim()
+      // add() dedupes only on an identical body, so several agents slowly collect
+      // variants of one rule until they crowd the text the prompt can show. Showing
+      // what already looks like it, at write time, is cheaper than a similarity gate
+      // and still lets the write through.
+      const similar = nearestNote(content, (res as any).id ?? '')
+      return { text: similar ? `${head}\nsimilar:\n${similar}` : head }
     },
 
     suggest(args) {
