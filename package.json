@@ -72,6 +72,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2"
   },
   "bin": {
+    "maestro-memory-hook": "lib/hook/main.js",
     "maestro-memory-mcp": "lib/mcp/main.js"
   }
 }
