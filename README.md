@@ -113,7 +113,7 @@ claude plugin install maestro-memory --marketplace ddtcorex/maestro-memory
 
 | Hook | Command | What it does |
 |---|---|---|
-| `SessionStart` | `maestro-memory-hook session-start` | prints the same bounded snapshot `memory_context` returns, so the first turn already knows the project |
+| `SessionStart` | `maestro-memory-hook session-start` | prints the same bounded snapshot `memory_context` returns for the payload's `cwd`, so the first turn already knows the project |
 | `SessionEnd` | `maestro-memory-hook session-end` | appends one line to `daily/<date>.md` |
 
 `maestro-memory-hook` is a second bin of the same package, called through `npx` at the pinned version
@@ -126,26 +126,44 @@ How a session end reads, measured on Claude Code 2.1.322:
 [07:15] session ended · project · - · 0 tools [session:3e4bd521-87ec-4e37-89dd-0b5a3366b8a6]
 ```
 
-- The stamp and the file date are UTC, so the two can never disagree.
+- The stamp and the file date come from the same local calendar the rest of the store uses, so a line
+  and the file it lands in can never disagree, and `memory_list date=today` finds it.
 - `-` means the payload carried no branch, and `0 tools` means it carried no tool count. 2.1.322 sends
   `session_id`, `transcript_path`, `cwd` and `hook_event_name`, plus `source` on start and `reason` on
   end. The line reports what it was told and invents nothing.
 - The `[session:…]` marker is what deduplicates: a second `SessionEnd` for one session writes nothing,
-  while two sessions ending in the same minute get a line each.
+  including one re-fired just after local midnight, while two sessions ending in the same minute get a
+  line each.
+- No line is written while a pre-5.0 store under `DSH_HOME` has not moved yet. The hook is the only
+  writer that runs without the boot migration, and creating the new root ahead of it makes the
+  migration find two roots and refuse.
 
-Measured cost of one live session: 69-77 ms for the start hook, about 2 KB of text added to the
-context, and no model call anywhere in the path.
+**What it costs.** The hook process itself is 36-77 ms, but the shipped command reaches it through
+`npx`: measured 704-795 ms per hook with a warm cache, so roughly 1.5 s added to a session start, and
+about 1.4 s for one resolution against the registry. No model call is involved anywhere in the path.
+What it injects is the bounded snapshot, which is capped per lane but can reach about 15 KB (roughly
+3.7k tokens) when every lane is full; the sample store used for testing was 2 KB.
 
 **Failure behaviour.** Both modes exit 0 and print nothing when the store is unreadable, when the
-payload is not JSON, or when the package cannot be fetched. `MAESTRO_MEMORY_DEBUG=1` is the only way to
-see a diagnostic, on stderr. A hook that stops a session is worse than one that says nothing.
+payload is not JSON, or when no store root can be resolved. The `npx` wrapper around them is not
+silent: with the registry unreachable it exits 1 and prints npm errors on stderr, which the harness
+shows to the human, so the shipped command discards stderr with `2>/dev/null`. Run the command by hand
+with `MAESTRO_MEMORY_DEBUG=1` to see what it would have said. A hook that stops a session is worse than
+one that says nothing.
+
+**A custom store path needs one more variable.** The hook process cannot see the DSH profile, so
+`config.memoryDir` alone does not reach it. If you set `memoryDir` in the profile, set
+`MAESTRO_MEMORY_DIR` to the same path for the hooks, or Claude Code will read a different (empty)
+store and write its diary lines there.
 
 **`/remember <text>`** writes one durable fact through the same MCP tools, and `key` still goes through
-the suggestion queue for human approval.
+the suggestion queue for human approval. Claude Code lists plugin commands namespaced, so it may appear
+as `/maestro-memory:remember`.
 
 **Release order matters.** The hooks call the published package, so publish the npm version first and
-push the plugin tag after. A plugin installed ahead of its package runs a command `npx` cannot resolve,
-and the hooks then fail silently by design.
+push the plugin tag after. A plugin installed ahead of its package runs a command `npx` cannot resolve;
+the hook then says nothing, but the wrapper's failure is what the human sees, which is why the wrapper
+stderr is discarded.
 
 ## System Prompt Snapshot
 
