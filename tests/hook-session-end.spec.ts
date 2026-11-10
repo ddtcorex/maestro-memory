@@ -37,6 +37,24 @@ describe('session end hook', () => {
     expect(body.trim()).toBe('[09:05] session ended · acme-shop · feat/x · 42 tools [session:s-1]')
   })
 
+  it('reads the session id the harness actually sends, and dedups on it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'hook-end4-'))
+    const payload = { cwd: '/work/acme-shop', hook_event_name: 'SessionEnd', session_id: '55f8e355' }
+    recordSessionEnd(payload, { root, now: new Date('2026-11-10T09:05:00Z') })
+    recordSessionEnd(payload, { root, now: new Date('2026-11-10T09:40:00Z') })
+    const body = readFileSync(join(root, 'daily', '2026-11-10.md'), 'utf8')
+    expect(body).toContain('[session:55f8e355]')
+    expect(body.split('§').filter((entry) => entry.trim())).toHaveLength(1)
+  })
+
+  it('reports zero tools and no branch when the payload carries neither', () => {
+    const line = buildSessionLine(
+      { cwd: '/work/acme-shop', session_id: 'x' },
+      new Date('2026-11-10T09:05:00Z'),
+    )
+    expect(line).toBe('[09:05] session ended · acme-shop · - · 0 tools [session:x]')
+  })
+
   it('records a different session in the same minute separately', () => {
     const root = mkdtempSync(join(tmpdir(), 'hook-end2-'))
     const now = new Date('2026-11-10T09:05:00Z')

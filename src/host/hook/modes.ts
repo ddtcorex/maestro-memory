@@ -159,6 +159,17 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * The session id, under both spellings.
+ *
+ * Measured on the installed harness (2.1.322): every hook payload carries
+ * `session_id`, never `sessionId`. The camel case stays supported because it costs
+ * one `||`, and a payload that changes spelling must not silently lose dedup.
+ */
+function sessionIdOf(payload: Record<string, any>): string {
+  return text(payload?.session_id) || text(payload?.sessionId)
+}
+
 /** The project's own name, never the whole path: this line is not a log entry. */
 function projectName(cwd: string): string {
   if (!cwd) return 'unknown'
@@ -183,7 +194,7 @@ export function buildSessionLine(payload: Record<string, any>, now: Date): strin
   const branch = text(payload?.branch) || '-'
   const raw = Number(payload?.toolCalls)
   const tools = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0
-  const sessionId = text(payload?.sessionId)
+  const sessionId = sessionIdOf(payload)
   const marker = sessionId ? ` [session:${sessionId}]` : ''
   return `[${hh}:${mm}] session ended · ${projectName(cwd)} · ${branch} · ${tools} tools${marker}`
 }
@@ -200,7 +211,7 @@ export function recordSessionEnd(payload: Record<string, any>, opts: { root: str
   const now = opts.now ?? new Date()
   const date = dayStamp(now)
   const line = buildSessionLine(payload, now)
-  const sessionId = text(payload?.sessionId)
+  const sessionId = sessionIdOf(payload)
   try {
     const file = dailyPath(opts.root, date)
     if (sessionId) {
