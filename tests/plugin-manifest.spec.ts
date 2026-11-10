@@ -39,6 +39,34 @@ describe('claude plugin manifest', () => {
     expect(existsSync(join(root, '.mcp.json'))).toBe(true)
   })
 
+  it('declares hooks that call the published hook bin at the same version', () => {
+    const hooks = read('hooks/hooks.json')
+    const commands = JSON.stringify(hooks)
+    expect(commands).toContain(`@ddtcorex/maestro-memory@${pkg.version}`)
+    expect(commands).toContain('maestro-memory-hook session-start')
+    expect(commands).toContain('maestro-memory-hook session-end')
+  })
+
+  it('wires both hooks to a real event, through the matcher shape the harness parses', () => {
+    const hooks = read('hooks/hooks.json').hooks
+    for (const event of ['SessionStart', 'SessionEnd']) {
+      const groups = hooks[event]
+      expect(Array.isArray(groups)).toBe(true)
+      const command = groups.flatMap((g: any) => g.hooks ?? []).find((h: any) => h.type === 'command')
+      expect(command?.command).toContain('maestro-memory-hook')
+    }
+  })
+
+  it('declares the hook bin in package.json', () => {
+    expect(pkg.bin['maestro-memory-hook']).toBeTruthy()
+  })
+
+  it('ships the /remember command with an argument placeholder', () => {
+    const file = join(root, 'commands', 'remember.md')
+    expect(existsSync(file)).toBe(true)
+    expect(readFileSync(file, 'utf8')).toContain('$ARGUMENTS')
+  })
+
   it('ships the skill that teaches the tools', () => {
     const skill = join(root, 'skills', 'memory', 'SKILL.md')
     expect(existsSync(skill)).toBe(true)

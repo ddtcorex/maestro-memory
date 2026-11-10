@@ -36,6 +36,9 @@ deciding the write is new.
 Write the durable fact, not the story of finding it. One entry, one idea. If it will be stale in a
 week, it does not belong in memory.
 
+If the person says "remember this", `/remember <text>` performs this same write in one step: it
+picks the track, writes it, and answers with the id.
+
 `key` cannot be written directly. `memory_add` refuses it and points at `memory_suggest`, which queues
 the entry for a human to approve in the DSH Memory view. That gate exists because key entries are what
 a future session reads first, and an unreviewed one crowds out a reviewed one.
