@@ -12,7 +12,7 @@ import { MaestroMemoryStore } from '../memory/store.ts'
 import { createStoreSearch, entryId } from '../memory/search/store-index.ts'
 import { formatHits, resolveTracks, REFUSAL_NO_QUERY, REFUSAL_CWD_REQUIRED } from '../memory/search/presentation.ts'
 import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
-import { SuggestionQueue, enqueueSuggestion } from '../review/queue.ts'
+import { SuggestionQueue, enqueueSuggestion, normalizeWhitespace } from '../review/queue.ts'
 import { suggestionsPath } from '../storage/layout.ts'
 
 export interface ToolResult {
@@ -45,6 +45,28 @@ const ADD_TARGETS = new Set(['memory', 'user', 'project', 'daily', 'key'])
  */
 const KEY_CONSENT_MESSAGE =
   'key is the long-lived track, so the human has to agree first. Show the exact entry, ask them with AskUserQuestion (write it, edit it, or skip), and only after an explicit yes call memory_add again with target=key, cwd and approved:true. When nobody is there to answer, use memory_suggest target=key with a reason instead.'
+
+/**
+ * Remove the queued suggestion that this write just satisfied.
+ *
+ * Matching is on the normalized body of the key track, which is the same rule the
+ * queue uses for its own dedupe, so an edited suggestion is left alone and still
+ * needs a decision.
+ */
+function dropObsoleteSuggestion(queue: SuggestionQueue, content: string): void {
+  try {
+    const wanted = normalizeWhitespace(content)
+    // mutate writes the array it hands you, so the removal has to happen in place.
+    queue.mutate((entries) => {
+      for (let index = entries.length - 1; index >= 0; index--) {
+        const entry = entries[index]!
+        if (entry.target === 'key' && normalizeWhitespace(entry.content) === wanted) entries.splice(index, 1)
+      }
+    })
+  } catch {
+    // A queue that cannot be rewritten must not fail the write that already landed.
+  }
+}
 
 function asCwd(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -148,6 +170,13 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
         // guessing which entry already exists.
         const existing = nearestNote(content, '', cwd).split('\n')[0]?.trim()
         return { text: existing ? `duplicate — not written; existing: ${existing}` : 'duplicate — not written' }
+      }
+      // The entry exists now, so a queued suggestion for the same rule is
+      // obsolete: leaving it makes the session-start notice count a suggestion
+      // for something already written, and a later approval would look like a
+      // second entry.
+      if (target === 'key' && res.ok && !res.duplicate) {
+        dropObsoleteSuggestion(queue, content)
       }
       const id = entryId(res.entry ?? content)
       const similar = nearestNote(content, id, cwd)

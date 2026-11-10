@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createToolHandlers } from '../src/host/mcp/tools.ts'
@@ -198,6 +198,20 @@ describe('key writes need in-chat consent', () => {
     })
     expect(res.text).toMatch(/^added /)
     expect(new MaestroMemoryStore(root).list('key', '/work/x')).toHaveLength(1)
+  })
+
+  it('drops the queued suggestion for the rule it just wrote', () => {
+    // Found live: the model queued the rule, then wrote it after the human said
+    // yes, and the queue kept the obsolete row. The session-start notice then
+    // reports a suggestion for something already in the store.
+    const root2 = mkdtempSync(join(tmpdir(), 'mcp-key4-'))
+    const handlers = createToolHandlers({ root: root2 })
+    const q = () =>
+      readFileSync(join(root2, 'SUGGESTIONS.jsonl'), 'utf8').split('\n').filter((l) => l.trim()).length
+    handlers.suggest({ target: 'key', content: 'phpcs must pass before merge', reason: 'a rule', cwd: '/work/x' })
+    expect(q()).toBe(1)
+    handlers.add({ target: 'key', content: 'phpcs must pass before merge', cwd: '/work/x', approved: true })
+    expect(q()).toBe(0)
   })
 
   it('still requires a project for a key write, because key is per project', () => {
