@@ -10,9 +10,11 @@
  */
 
 import { accessSync, constants as fsConstants } from 'node:fs'
+import { basename } from 'node:path'
 import { MaestroMemoryStore } from '../memory/store.ts'
 import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
-import { resolveStoreRoot } from '../storage/layout.ts'
+import { appendEntryAtomicSync, readEntriesSync } from '../storage/atomic-store.ts'
+import { dailyPath, resolveStoreRoot } from '../storage/layout.ts'
 
 export type HookMode = 'session-start' | 'session-end'
 
@@ -144,3 +146,78 @@ export function renderSessionStart(payload: Record<string, any>, opts: { root: s
 }
 
 RUNNERS['session-start'] = (payload, ctx) => renderSessionStart(payload, { root: ctx.root })
+
+/** UTC on purpose: the storage layer keeps its own calendar, and a diary line
+ * that printed local time in a UTC-dated file would read as the wrong day. */
+function dayStamp(now: Date): string {
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(now.getUTCDate()).padStart(2, '0')
+  return `${now.getUTCFullYear()}-${mm}-${dd}`
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** The project's own name, never the whole path: this line is not a log entry. */
+function projectName(cwd: string): string {
+  if (!cwd) return 'unknown'
+  const trimmed = cwd.replace(/[\\/]+$/, '')
+  const name = basename(trimmed)
+  return name && name !== '.' ? name : 'unknown'
+}
+
+/**
+ * One line, mechanically:
+ * `[HH:MM] session ended · <project> · <branch> · <n> tools`
+ *
+ * Every field has a visible fallback, so the line is always parseable and never
+ * invents a fact. When the payload carries a session id it is appended as a
+ * marker: that is what makes a repeated `session-end` for one session a no-op
+ * while two sessions in the same minute each get their own line.
+ */
+export function buildSessionLine(payload: Record<string, any>, now: Date): string {
+  const hh = String(now.getUTCHours()).padStart(2, '0')
+  const mm = String(now.getUTCMinutes()).padStart(2, '0')
+  const cwd = text(payload?.cwd)
+  const branch = text(payload?.branch) || '-'
+  const raw = Number(payload?.toolCalls)
+  const tools = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0
+  const sessionId = text(payload?.sessionId)
+  const marker = sessionId ? ` [session:${sessionId}]` : ''
+  return `[${hh}:${mm}] session ended · ${projectName(cwd)} · ${branch} · ${tools} tools${marker}`
+}
+
+/**
+ * Write the line, or write nothing.
+ *
+ * Runs on session end, so it returns `''` in every outcome: there is nothing to
+ * print, and a hook that reported a storage error would be noise in a session
+ * that already finished. The dedup check reads the day's entries and looks for
+ * the session marker, never for the timestamp.
+ */
+export function recordSessionEnd(payload: Record<string, any>, opts: { root: string; now?: Date }): string {
+  const now = opts.now ?? new Date()
+  const date = dayStamp(now)
+  const line = buildSessionLine(payload, now)
+  const sessionId = text(payload?.sessionId)
+  try {
+    const file = dailyPath(opts.root, date)
+    if (sessionId) {
+      const marker = `[session:${sessionId}]`
+      if (readEntriesSync(file).some((entry) => entry.includes(marker))) return ''
+    }
+    // Appended through the same locked writer the store uses, but without
+    // `store.add`: that path tags the entry with an auto summary taken from its
+    // own text, and a diary line that repeats itself in its header is not the
+    // documented shape. Atomicity and duplicate detection are unchanged.
+    const res = appendEntryAtomicSync(file, line)
+    if (!res.ok) debug(`session-end write failed: ${res.error}`)
+    else if (res.duplicate) debug('session-end line already present')
+  } catch (error: any) {
+    debug(`session-end failed: ${error?.message ?? error}`)
+  }
+  return ''
+}
+
+RUNNERS['session-end'] = (payload, ctx) => recordSessionEnd(payload, { root: ctx.root, now: ctx.now() })
