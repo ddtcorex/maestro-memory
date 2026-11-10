@@ -34,8 +34,17 @@ export interface HandlerOptions {
 }
 
 const ADD_TARGETS = new Set(['memory', 'user', 'project', 'daily', 'key'])
-const KEY_GATE_MESSAGE =
-  'key is gated — use memory_suggest target=key with reason (direct memory add for key is CLI-only)'
+/**
+ * How a `key` write is allowed.
+ *
+ * It used to point at a CLI that does not exist, so the honest path was invisible
+ * and the queue was the only way in, which a Claude-only session cannot approve.
+ * The gate now lives in the session: the model shows the exact entry, asks with
+ * AskUserQuestion, and the call carries the human's answer. Without that answer
+ * nothing is written, so a model that forgot to ask gets a refusal it can act on.
+ */
+const KEY_CONSENT_MESSAGE =
+  'key is the long-lived track, so the human has to agree first. Show the exact entry, ask them with AskUserQuestion (write it, edit it, or skip), and only after an explicit yes call memory_add again with target=key, cwd and approved:true. When nobody is there to answer, use memory_suggest target=key with a reason instead.'
 
 function asCwd(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -121,9 +130,12 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       const content = typeof args.content === 'string' ? args.content.trim() : ''
       if (!content) return { text: 'empty content' }
       const cwd = asCwd(args.cwd)
-      // A foreign agent never writes key directly: it goes through the same queue
-      // a DSH model uses, so a human still approves the long-lived track.
-      if (target === 'key') return { text: KEY_GATE_MESSAGE }
+      // The long-lived track requires the human's decision, carried by the call
+      // itself, and a project to belong to.
+      if (target === 'key') {
+        if (args.approved !== true) return { text: KEY_CONSENT_MESSAGE }
+        if (!cwd) return { text: REFUSAL_CWD_REQUIRED }
+      }
       if (target === 'project' && !cwd) return { text: REFUSAL_CWD_REQUIRED }
       const addOpts: Record<string, unknown> = {}
       if (typeof args.summary === 'string' && args.summary.trim()) addOpts.summary = args.summary.trim()

@@ -85,8 +85,10 @@ args = ["<checkout>/lib/mcp/main.js"]
 ```
 
 Five tools: `memory_search`, `memory_context`, `memory_list`, `memory_add`, `memory_suggest`. The
-`key` track stays gated: `memory_add` refuses it and `memory_suggest` queues it for human approval,
-exactly as in DSH.
+`key` track needs the human's decision: `memory_add` accepts it only with `approved:true`, which a
+client sends after asking the person in the session (Claude Code has `AskUserQuestion` for this), and
+refuses with instructions otherwise. A client that cannot ask, or a session with nobody watching, uses
+`memory_suggest`, and the session-start context reports how many suggestions are waiting.
 
 **Start a session with `memory_context`.** The Claude Code plugin does this for the session it starts
 (see below); every other client calls it as its first tool use and gets the same bounded context DSH

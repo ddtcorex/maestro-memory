@@ -77,16 +77,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'memory_add',
     readOnly: false,
     description:
-      'Append one durable entry. Search first: if a similar entry already exists, extend it rather than adding a near-duplicate. The key track is gated and must go through memory_suggest. The reply lists the closest existing entries so a duplicate is visible immediately.',
+      'Append one durable entry. Search first: if a similar entry already exists, extend it rather than adding a near-duplicate. The key track needs the human in the loop: show the exact entry, ask with AskUserQuestion, and only after an explicit yes send approved:true. Use memory_suggest instead when nobody is there to answer. The reply lists the closest existing entries so a duplicate is visible immediately.',
     inputSchema: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['memory', 'user', 'project', 'daily'] },
+        target: { type: 'string', enum: ['memory', 'user', 'project', 'daily', 'key'] },
         content: { type: 'string', description: 'The entry body. Write the durable fact, not the story of finding it.' },
         cwd: CWD,
         date: { type: 'string', description: 'Daily track date, YYYY-MM-DD.' },
         summary: { type: 'string', description: 'One-line summary, used by the prompt index lane.' },
         branches: { type: 'string', description: 'Branch scope for a project entry, comma-separated.' },
+        approved: {
+          type: 'boolean',
+          description:
+            'Set true only for the key track, and only after the human answered yes in this session. Other tracks ignore it.',
+        },
       },
       required: ['target', 'content'],
       additionalProperties: false,

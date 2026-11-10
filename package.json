@@ -1,6 +1,6 @@
 {
   "name": "@ddtcorex/maestro-memory",
-  "version": "5.1.1",
+  "version": "5.2.0",
   "private": false,
   "packageManager": "pnpm@11.7.0",
   "description": "Durable layered memory (global / user / project / branch / daily), confirmation-gated writes, todos and skills. Agent-agnostic store, DSH plugin today.",

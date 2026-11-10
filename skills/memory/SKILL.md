@@ -34,7 +34,7 @@ deciding the write is new.
 | `user` | Standing instructions about how to work with this person |
 | `project` | Facts tied to one repository, with `cwd` |
 | `daily` | What happened today, with a date |
-| `key` | Long-lived rules. **Gated: not writable directly** |
+| `key` | Long-lived rules. **Ask the human first, then write with `approved:true`** |
 
 Write the durable fact, not the story of finding it. One entry, one idea. If it will be stale in a
 week, it does not belong in memory.
@@ -42,9 +42,17 @@ week, it does not belong in memory.
 If the person says "remember this", `/remember <text>` performs this same write in one step: it
 picks the track, writes it, and answers with the id.
 
-`key` cannot be written directly. `memory_add` refuses it and points at `memory_suggest`, which queues
-the entry for a human to approve in the DSH Memory view. That gate exists because key entries are what
-a future session reads first, and an unreviewed one crowds out a reviewed one.
+`key` needs the human in the loop, because key entries are what a future session reads first and an
+unreviewed one crowds out a reviewed one. The flow:
+
+1. Show the exact entry you intend to write, in one line.
+2. Ask with `AskUserQuestion`, offering write it, edit it, or skip.
+3. Only after an explicit yes, call `memory_add` with `target:key`, the project as `cwd`, and
+   `approved:true`. Without that flag the tool refuses and says so.
+
+When nobody is there to answer, `memory_suggest` with `target:key` queues the entry for approval in the
+DSH Memory view instead. The session-start context prints how many suggestions are waiting, so the
+queue cannot fill up unnoticed.
 
 ## What this is not
 

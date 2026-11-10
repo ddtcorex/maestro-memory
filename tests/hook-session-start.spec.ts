@@ -56,6 +56,26 @@ describe('session start hook', () => {
     expect(out).toContain('THE-KEY-MARKER')
   })
 
+  it('says how many suggestions are waiting for approval', () => {
+    // The queue is invisible from Claude otherwise: nothing lists it, so a
+    // suggestion sits there until someone happens to open the DSH Memory view.
+    const root = mkdtempSync(join(tmpdir(), 'hook-start5-'))
+    seed(root)
+    const entry = (content: string) =>
+      `${JSON.stringify({ time: '2026-11-10T09:00:00.000Z', target: 'key', content, reason: 'worth keeping' })}\n`
+    writeFileSync(join(root, 'SUGGESTIONS.jsonl'), entry('rule one') + entry('rule two'))
+
+    const out = renderSessionStart({ cwd: '/work/x' }, { root })
+    expect(out).toMatch(/2 suggestions? (is|are) waiting/i)
+    expect(out).toMatch(/DSH Memory view/i)
+  })
+
+  it('adds no notice when nothing is waiting', () => {
+    const root = mkdtempSync(join(tmpdir(), 'hook-start6-'))
+    seed(root)
+    expect(renderSessionStart({ cwd: '/work/x' }, { root })).not.toMatch(/waiting for approval/i)
+  })
+
   it('follows MAESTRO_MEMORY_DIR, so a hook never reaches the live store', () => {
     const root = mkdtempSync(join(tmpdir(), 'hook-start3-'))
     seed(root)
