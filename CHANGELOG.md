@@ -4,6 +4,52 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-11-10
+
+Memory happens without being asked, in Claude Code: a session starts with the project's
+state already in context and leaves one dated line behind. No model is involved in
+either direction, and no instruction in `CLAUDE.md` is needed.
+
+### Added
+
+- **`maestro-memory-hook`, a second bin**, with two modes. `session-start` prints the
+  same bounded snapshot `memory_context` returns; `session-end` appends one line,
+  `[HH:MM] session ended · <project> · <branch or -> · <n> tools [session:<id>]`. Both
+  resolve the store through the same resolver as the server, so `DSH_HOME`,
+  `MAESTRO_MEMORY_DIR` and the neutral root behave exactly as they do elsewhere.
+- **`hooks/hooks.json`** wires `SessionStart` and `SessionEnd` to that bin through
+  `npx` at the package's own version, with the wrapper's stderr discarded so a failed
+  fetch cannot add noise to a session.
+- **`/remember <text>`**: one durable write through the existing tools, with `key`
+  still going through the suggestion queue for human approval.
+- The `memory` skill now states that the hook already delivered the session context,
+  so the model does not fetch the same snapshot a second time.
+
+### Fixed
+
+- **A hook could create a second store root and make the store stop being served.**
+  The hook is the only writer that runs without the boot migration, so it now writes
+  nothing while a pre-5.0 store under `DSH_HOME` has not moved yet. Creating the new
+  root first made the migration find two roots and refuse.
+- **The diary line followed UTC while every other daily writer follows the local
+  calendar**, which split one local day across two files and made
+  `memory_list date=today` miss the line. The stamp and the file date now come from
+  the store's calendar, and a session re-fired just after local midnight still leaves
+  one line.
+- Session deduplication survives a rename of the payload field: the marker falls back
+  to the transcript's file name, which every hook payload carries.
+- The store root and its subdirectories are created `0700` instead of inheriting the
+  umask, so a store created by a write is as private as a moved one.
+
+### Notes
+
+- Release order matters for the plugin: publish this version before pushing the plugin
+  tag. The installed hooks call the published package, and a plugin tag that lands
+  first gives a hook whose `npx` cannot resolve the version yet.
+- Measured on Claude Code 2.1.322: the hook process takes 36-77 ms and the `npx` path
+  around it 0.7-0.8 s; a session start injects up to about 15 KB when every memory lane
+  is at its cap.
+
 ## [5.0.1] - 2026-11-09
 
 Finishes the store-root work after 5.0.0 shipped.
