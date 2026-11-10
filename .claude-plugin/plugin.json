@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "maestro-memory",
+  "version": "5.0.1",
+  "description": "One durable memory store shared by every agent on the machine: search it, read the session-start context, and append what should outlive the session.",
+  "author": {
+    "name": "Toan (Kai) Do",
+    "email": "kaido4492@gmail.com",
+    "url": "https://github.com/ddtcorex"
+  },
+  "homepage": "https://github.com/ddtcorex/maestro-memory",
+  "repository": "https://github.com/ddtcorex/maestro-memory",
+  "license": "MIT",
+  "keywords": ["memory", "mcp", "context", "cross-agent"],
+  "mcpServers": "./.mcp.json"
+}

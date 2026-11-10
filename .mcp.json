@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "maestro-memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ddtcorex/maestro-memory@5.0.1",
+        "maestro-memory-mcp"
+      ]
+    }
+  }
+}

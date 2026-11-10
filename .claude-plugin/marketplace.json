@@ -1,0 +1,26 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "maestro-memory",
+  "description": "Durable memory for coding agents, shared across Claude Code, Codex and Cursor.",
+  "owner": {
+    "name": "Toan (Kai) Do",
+    "email": "kaido4492@gmail.com",
+    "url": "https://github.com/ddtcorex"
+  },
+  "plugins": [
+    {
+      "name": "maestro-memory",
+      "source": "./",
+      "description": "One durable memory store shared by every agent on the machine: search it, read the session-start context, and append what should outlive the session.",
+      "author": {
+        "name": "Toan (Kai) Do",
+        "email": "kaido4492@gmail.com",
+        "url": "https://github.com/ddtcorex"
+      },
+      "homepage": "https://github.com/ddtcorex/maestro-memory",
+      "repository": "https://github.com/ddtcorex/maestro-memory",
+      "license": "MIT",
+      "keywords": ["memory", "mcp", "context", "cross-agent"]
+    }
+  ]
+}
