@@ -20,6 +20,13 @@ package, including the MCP server the plugin starts.
   bin, which works with any number of bins.
 - A manifest test pins the form: while the package declares more than one bin, every
   shipped command must use `-p`, so this cannot regress again.
+- **A large session context was not injected at all.** A `SessionStart` hook whose
+  stdout passes 10,000 bytes is not shown to the model: the harness writes it to a
+  file and injects a preview of roughly 2 KB, so a full store lost its project lanes.
+  The hook now keeps its output under 9,000 bytes, first by rendering with tighter
+  caps and then by cutting with a visible marker, while a store that already fits
+  still renders byte for byte what `memory_context` returns. Measured on the live
+  store: 12.5 KB before, 7 KB after, with every section present.
 
 ## [5.1.0] - 2026-11-10
 
