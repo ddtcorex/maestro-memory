@@ -32,3 +32,13 @@ describe('mcp tool definitions', () => {
     expect(add.description.toLowerCase()).toContain('search')
   })
 })
+
+describe('memory_add key path', () => {
+  it('accepts the key track and the approved flag the consent flow needs', () => {
+    const def = TOOL_DEFINITIONS.find((d) => d.name === 'memory_add')!
+    const props = def.inputSchema.properties as Record<string, any>
+    expect(props.target.enum).toContain('key')
+    expect(props.approved.type).toBe('boolean')
+    expect(def.description).toMatch(/ask/i)
+  })
+})

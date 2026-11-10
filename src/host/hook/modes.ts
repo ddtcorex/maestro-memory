@@ -15,8 +15,9 @@ import { basename } from 'node:path'
 import { MaestroMemoryStore } from '../memory/store.ts'
 import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
 import { appendEntryAtomicSync, readEntriesSync } from '../storage/atomic-store.ts'
+import { SuggestionQueue } from '../review/queue.ts'
 import { readHealth } from '../storage/health.ts'
-import { dailyPath, resolveDshHome, resolveStoreRoot } from '../storage/layout.ts'
+import { dailyPath, resolveDshHome, resolveStoreRoot, suggestionsPath } from '../storage/layout.ts'
 
 export type HookMode = 'session-start' | 'session-end'
 
@@ -151,6 +152,28 @@ function clipTo(text: string, max: number): string {
   return `${out}${CLIP_MARKER}`
 }
 
+/**
+ * One line, only when the approval queue is not empty.
+ *
+ * Nothing else in a Claude session can see that queue, so a suggestion waits
+ * forever if the human never opens the DSH Memory view. The count is the whole
+ * message; the decision stays where the queue is reviewed and edited.
+ */
+function queueNotice(root: string): string {
+  try {
+    const count = new SuggestionQueue(suggestionsPath(root)).read().length
+    if (count === 0) return ''
+    const line =
+      count === 1
+        ? `1 suggestion is waiting for approval; review it in the DSH Memory view.`
+        : `${count} suggestions are waiting for approval; review them in the DSH Memory view.`
+    return `[maestro-memory] ${line}\n\n`
+  } catch (error: any) {
+    debug(`queue notice skipped: ${error?.message ?? error}`)
+    return ''
+  }
+}
+
 /** The largest render that still fits: full snapshot, then tighter caps, then a cut. */
 function renderWithinBudget(store: MaestroMemoryStore, cwd: string | null, max: number): string {
   const full = renderSnapshotWithStats(store, { cwd }).text
@@ -189,9 +212,10 @@ export function renderSessionStart(payload: Record<string, any>, opts: { root: s
   try {
     const store = new MaestroMemoryStore(opts.root)
     const notice = cwd ? '' : `\n\n${NO_CWD_NOTICE}`
-    const budget = HOOK_MAX_BYTES - Buffer.byteLength(notice, 'utf8')
+    const pending = queueNotice(opts.root)
+    const budget = HOOK_MAX_BYTES - Buffer.byteLength(notice, 'utf8') - Buffer.byteLength(pending, 'utf8')
     const text = renderWithinBudget(store, cwd, budget)
-    return `${text}${notice}`
+    return `${pending}${text}${notice}`
   } catch (error: any) {
     debug(`session-start render failed: ${error?.message ?? error}`)
     return ''

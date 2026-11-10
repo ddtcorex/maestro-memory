@@ -6,7 +6,7 @@
       "args": [
         "-y",
         "-p",
-        "@ddtcorex/maestro-memory@5.1.1",
+        "@ddtcorex/maestro-memory@5.2.0",
         "maestro-memory-mcp"
       ]
     }

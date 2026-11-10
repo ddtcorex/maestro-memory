@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2026-11-10
+
+The `key` track stops being unreachable from Claude Code.
+
+### Added
+
+- **An in-session approval path for `key`.** `memory_add` now accepts the long-lived track when the
+  call carries `approved:true`, which a client sends after showing the entry and asking the person
+  (`AskUserQuestion` in Claude Code). Without the flag the tool refuses with the procedure instead of
+  a dead end, and nothing is written.
+- **The session-start context reports a non-empty approval queue**, so a suggestion that was deferred
+  cannot sit unseen until someone happens to open the DSH Memory view.
+
+### Changed
+
+- The refusal that used to point at a CLI which does not exist now names the two real paths: ask in the
+  session, or defer with `memory_suggest`.
+
 ## [5.1.1] - 2026-11-10
 
 Fixes a regression that 5.1.0 shipped: the second bin broke every `npx` launch of this

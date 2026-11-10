@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createToolHandlers } from '../src/host/mcp/tools.ts'
+import { MaestroMemoryStore } from '../src/host/memory/store.ts'
 
 let root: string
 beforeEach(() => {
@@ -37,10 +38,12 @@ describe('mcp tool layer', () => {
     expect(h.search({ query: 'nothing here', tracks: 'key' }).text).toMatch(/no match/)
   })
 
-  it('refuses a key write and points at the queue', () => {
+  it('refuses a key write and names both ways to get the human decision', () => {
     const h = createToolHandlers({ root })
     const out = h.add({ target: 'key', content: 'rule', cwd: '/work/x' })
-    expect(out.text).toMatch(/gated|queue/i)
+    expect(out.text).toMatch(/ask/i)
+    expect(out.text).toContain('approved:true')
+    expect(out.text).toContain('memory_suggest')
   })
 
   it('refuses a key suggestion without cwd', () => {
@@ -170,5 +173,51 @@ describe('binding parity', () => {
       .content[0].text
     const mcpOut = createToolHandlers({ root }).search({ query: 'phpcs internal api', cwd: '/work/x' }).text
     expect(mcpOut).toBe(dshOut)
+  })
+})
+
+describe('key writes need in-chat consent', () => {
+  it('refuses a key write that does not carry the human decision', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mcp-key-'))
+    const handlers = createToolHandlers({ root })
+    const res = handlers.add({ target: 'key', content: 'a rule nobody approved', cwd: '/work/x' })
+    expect(res.text).toMatch(/ask/i)
+    expect(res.text).toContain('approved:true')
+    expect(new MaestroMemoryStore(root).list('key', '/work/x')).toHaveLength(0)
+  })
+
+  it('writes the key entry once the human agreed in the session', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mcp-key2-'))
+    const handlers = createToolHandlers({ root })
+    const res = handlers.add({
+      target: 'key',
+      content: 'phpcs runs before merge',
+      cwd: '/work/x',
+      approved: true,
+      summary: 'phpcs before merge',
+    })
+    expect(res.text).toMatch(/^added /)
+    expect(new MaestroMemoryStore(root).list('key', '/work/x')).toHaveLength(1)
+  })
+
+  it('drops the queued suggestion for the rule it just wrote', () => {
+    // Found live: the model queued the rule, then wrote it after the human said
+    // yes, and the queue kept the obsolete row. The session-start notice then
+    // reports a suggestion for something already in the store.
+    const root2 = mkdtempSync(join(tmpdir(), 'mcp-key4-'))
+    const handlers = createToolHandlers({ root: root2 })
+    const q = () =>
+      readFileSync(join(root2, 'SUGGESTIONS.jsonl'), 'utf8').split('\n').filter((l) => l.trim()).length
+    handlers.suggest({ target: 'key', content: 'phpcs must pass before merge', reason: 'a rule', cwd: '/work/x' })
+    expect(q()).toBe(1)
+    handlers.add({ target: 'key', content: 'phpcs must pass before merge', cwd: '/work/x', approved: true })
+    expect(q()).toBe(0)
+  })
+
+  it('still requires a project for a key write, because key is per project', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mcp-key3-'))
+    const handlers = createToolHandlers({ root })
+    const res = handlers.add({ target: 'key', content: 'a rule', approved: true })
+    expect(res.text).toMatch(/cwd/i)
   })
 })
