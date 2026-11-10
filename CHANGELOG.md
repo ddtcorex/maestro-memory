@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] - 2026-11-09
+
+Finishes the store-root work after 5.0.0 shipped.
+
+- The Memory view distinguishes a store that has moved (`migrated-v5.json`) from one still inside the DSH home, and shows which branch of the resolver produced the root.
+- Docs: the store path and the release order are recorded in the workspace architecture notes.
+
 ## [5.0.0] - 2026-11-09
 
 The store leaves the harness home. It was the last part of the product that claimed to
