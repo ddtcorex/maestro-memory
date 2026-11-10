@@ -5,7 +5,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@ddtcorex/maestro-memory@5.0.1",
+        "@ddtcorex/maestro-memory@5.1.0",
         "maestro-memory-mcp"
       ]
     }

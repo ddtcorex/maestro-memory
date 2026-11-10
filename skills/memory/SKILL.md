@@ -10,9 +10,12 @@ other agent, including this one, reaches it only through these tools.
 
 ## Start of a session
 
-Call `memory_context` once, with the project directory as `cwd`. It returns the same bounded context
-DSH would have injected: user memory, global memory, the project's key entries, recent daily notes and
-an index of older key entries. Without this call, a project with months of memory looks brand new.
+The plugin's `SessionStart` hook already delivered this project's bounded context: user memory, global
+memory, the project's key entries, recent daily notes and an index of older key entries. Do not fetch it
+again.
+
+Call `memory_context` only when that context is missing: a host without the hook (Codex, Cursor, a bare
+MCP client), or a session that was compacted and lost it.
 
 ## Before you write
 
@@ -35,6 +38,9 @@ deciding the write is new.
 
 Write the durable fact, not the story of finding it. One entry, one idea. If it will be stale in a
 week, it does not belong in memory.
+
+If the person says "remember this", `/remember <text>` performs this same write in one step: it
+picks the track, writes it, and answers with the id.
 
 `key` cannot be written directly. `memory_add` refuses it and points at `memory_suggest`, which queues
 the entry for a human to approve in the DSH Memory view. That gate exists because key entries are what
