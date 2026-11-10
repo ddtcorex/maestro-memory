@@ -246,7 +246,9 @@ function sleep(ms: number): Promise<void> {
 export function withLockSync<T>(dir: string, fn: () => T): T {
   if (heldLocks.has(dir)) return fn()
   const lockPath = join(dir, LOCK_FILE)
-  mkdirSync(dir, { recursive: true })
+  // 0700, not the umask: the store holds personal notes, and a fresh store used to
+  // inherit 0775 under umask 002, which the migration then had to narrow by chmod.
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   const deadline = Date.now() + LOCK_TIMEOUT_MS
   for (;;) {
     let acquired = false
@@ -418,7 +420,7 @@ export async function writeAtomic(filePath: string, content: string): Promise<vo
  */
 export function writeAtomicSync(filePath: string, content: string): void {
   const dir = dirname(filePath)
-  mkdirSync(dir, { recursive: true })
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   const tmp = join(dir, `.${randomUUID()}.tmp`)
   try {
     const fd = openSync(tmp, 'wx', 0o600)

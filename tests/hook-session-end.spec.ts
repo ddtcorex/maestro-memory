@@ -95,6 +95,22 @@ describe('session end hook', () => {
     expect(entriesIn(join(root, 'daily', '2026-11-10.md'))[0]).toContain('[23:30]')
   })
 
+  it('keeps the session marker when the payload carries no session id field', () => {
+    // The marker is what makes a re-fired session-end a no-op. Deriving it from the
+    // transcript name means a harness that renames `session_id` still leaves one
+    // line per session instead of losing the property silently.
+    const root = mkdtempSync(join(tmpdir(), 'hook-end7-'))
+    const payload = {
+      cwd: '/work/acme-shop',
+      transcript_path: '/home/x/.claude/projects/-work-acme-shop/9f2c1d7e-4a.jsonl',
+    }
+    recordSessionEnd(payload, { root, now: at(2026, 11, 10, 9, 5) })
+    recordSessionEnd(payload, { root, now: at(2026, 11, 10, 9, 41) })
+    const entries = entriesIn(join(root, 'daily', '2026-11-10.md'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toContain('[session:9f2c1d7e-4a]')
+  })
+
   it('never creates the store root while a legacy store has not moved', () => {
     // The hook is the only writer that runs without the boot migration. If it
     // created the new root first, the migration would find two roots and refuse,

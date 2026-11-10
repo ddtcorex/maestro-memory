@@ -32,7 +32,7 @@ export function debug(message: string): void {
 }
 
 /** A payload is a JSON object; anything else (array, string, garbage) is `{}`. */
-function asPayload(text: string): Record<string, unknown> {
+export function parsePayload(text: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(text)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -51,12 +51,17 @@ function asPayload(text: string): Record<string, unknown> {
  * and only the bin knows whether a payload is even expected. The default returns
  * nothing, which is exactly the contract a test needs.
  */
+/** The mode named on the command line, or null. Flags are skipped, not parsed. */
+export function parseHookMode(argv: string[]): HookMode | null {
+  const raw = argv.find((arg) => !arg.startsWith('-'))
+  return raw && KNOWN_MODES.includes(raw) ? (raw as HookMode) : null
+}
+
 export function parseHookArgs(
   argv: string[],
   readStdin: () => string = () => '',
 ): { mode: HookMode | null; payload: Record<string, unknown> } {
-  const raw = argv.find((arg) => !arg.startsWith('-'))
-  const mode = raw && KNOWN_MODES.includes(raw) ? (raw as HookMode) : null
+  const mode = parseHookMode(argv)
   if (!mode) return { mode: null, payload: {} }
   let text = ''
   try {
@@ -65,7 +70,7 @@ export function parseHookArgs(
     debug(`stdin read failed: ${error?.message ?? error}`)
   }
   if (!text.trim()) return { mode, payload: {} }
-  return { mode, payload: asPayload(text) }
+  return { mode, payload: parsePayload(text) }
 }
 
 export interface HookDeps {
@@ -173,14 +178,22 @@ function text(value: unknown): string {
 }
 
 /**
- * The session id, under both spellings.
+ * The session id, under every spelling the payloads use.
  *
  * Measured on the installed harness (2.1.322): every hook payload carries
  * `session_id`, never `sessionId`. The camel case stays supported because it costs
- * one `||`, and a payload that changes spelling must not silently lose dedup.
+ * one `||`. When neither is there the transcript's own file name is used: it is the
+ * session's identity and the payload always carries it, so a harness that renames
+ * the id field cannot silently cost one-line-per-session. No marker at all only
+ * happens when the payload is empty, and then the identical line is the duplicate.
  */
 function sessionIdOf(payload: Record<string, any>): string {
-  return text(payload?.session_id) || text(payload?.sessionId)
+  const direct = text(payload?.session_id) || text(payload?.sessionId)
+  if (direct) return direct
+  const transcript = text(payload?.transcript_path)
+  if (!transcript) return ''
+  const name = basename(transcript).replace(/\.jsonl$/i, '')
+  return name && name !== '.' ? name : ''
 }
 
 /** The project's own name, never the whole path: this line is not a log entry. */

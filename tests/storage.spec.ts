@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { mkdtempSync, statSync } from 'node:fs'
 import { parseEntries, serializeEntries, isCanonical } from '../src/host/storage/legacy-format.ts'
+import { appendEntryAtomicSync } from '../src/host/storage/atomic-store.ts'
 import {
   projectHash,
   legacyProjectHash,
@@ -193,5 +195,21 @@ describe('atomic-store duplicates', () => {
   })
   it('strip id', () => {
     expect(stripEntryId('[id: abcdef12] hi')).toBe('hi')
+  })
+})
+
+describe('store directory permissions', () => {
+  it('creates the store root and its subdirectories private, never group-writable', () => {
+    // A fresh store used to inherit the umask (0775 under umask 002), which makes
+    // every later daily line group-readable. The migration narrows a moved store
+    // with chmod, so a store created by a write must not need that rescue.
+    const parent = mkdtempSync(join(tmpdir(), 'maestro-perm-'))
+    const root = join(parent, 'store')
+    const file = dailyPath(root, '2026-11-10')
+    const res = appendEntryAtomicSync(file, '[09:05] session ended · x · - · 0 tools')
+    expect(res.ok).toBe(true)
+    expect(statSync(root).mode & 0o777).toBe(0o700)
+    expect(statSync(join(root, 'daily')).mode & 0o777).toBe(0o700)
+    expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 })

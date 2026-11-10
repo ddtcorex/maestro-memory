@@ -13,7 +13,7 @@
 
 import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { debug, parseHookArgs, runHook } from './modes.ts'
+import { debug, parseHookMode, parsePayload, runHook } from './modes.ts'
 
 /** A payload that never closes must not hold a session start hostage. */
 const STDIN_TIMEOUT_MS = 500
@@ -53,13 +53,12 @@ function readPayload(timeoutMs = STDIN_TIMEOUT_MS): Promise<string> {
  * copy of its logic: the guard below is the only untested line.
  */
 export async function runHookCli(argv: string[] = process.argv.slice(2)): Promise<void> {
-  const { mode } = parseHookArgs(argv)
+  const mode = parseHookMode(argv)
   if (!mode) {
     debug(`ignoring invocation with no known mode: ${JSON.stringify(argv)}`)
     return
   }
-  const text = await readPayload()
-  const { payload } = parseHookArgs(argv, () => text)
+  const payload = parsePayload(await readPayload())
   const out = runHook(mode, payload)
   if (!out) return
   process.stdout.write(out.endsWith('\n') ? out : `${out}\n`)
