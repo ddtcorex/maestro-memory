@@ -9,6 +9,9 @@
  * costs them a wrong project. Returning `''` is always allowed; throwing is not.
  */
 
+import { accessSync, constants as fsConstants } from 'node:fs'
+import { MaestroMemoryStore } from '../memory/store.ts'
+import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
 import { resolveStoreRoot } from '../storage/layout.ts'
 
 export type HookMode = 'session-start' | 'session-end'
@@ -100,3 +103,44 @@ export function runHook(mode: HookMode, payload: Record<string, any>, deps: Hook
     return ''
   }
 }
+
+/** Said once, instead of guessing which project the session belongs to. */
+export const NO_CWD_NOTICE = '(no project directory in the hook payload; showing global memory only)'
+
+function isReadable(root: string): boolean {
+  try {
+    accessSync(root, fsConstants.R_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The text `SessionStart` injects: the same bounded snapshot `memory_context`
+ * returns, so the two transports cannot disagree about what a project remembers.
+ *
+ * No cwd means no project lanes. The alternative, falling back to the process
+ * working directory, would attach some other project's memory to this session
+ * whenever the harness starts the hook somewhere unexpected; one notice line is
+ * the cheaper, honest failure. No session fields either: this renderer must never
+ * trigger the first-turn USER.md bootstrap write that a real DSH session performs.
+ */
+export function renderSessionStart(payload: Record<string, any>, opts: { root: string }): string {
+  const raw = typeof payload?.cwd === 'string' ? payload.cwd.trim() : ''
+  const cwd = raw.length > 0 ? raw : null
+  if (!isReadable(opts.root)) {
+    debug(`store not readable, saying nothing: ${opts.root}`)
+    return ''
+  }
+  try {
+    const store = new MaestroMemoryStore(opts.root)
+    const text = renderSnapshotWithStats(store, { cwd }).text
+    return cwd ? text : `${text}\n\n${NO_CWD_NOTICE}`
+  } catch (error: any) {
+    debug(`session-start render failed: ${error?.message ?? error}`)
+    return ''
+  }
+}
+
+RUNNERS['session-start'] = (payload, ctx) => renderSessionStart(payload, { root: ctx.root })
