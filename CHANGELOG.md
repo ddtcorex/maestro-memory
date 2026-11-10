@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] - 2026-11-10
+
+Fixes a regression that 5.1.0 shipped: the second bin broke every `npx` launch of this
+package, including the MCP server the plugin starts.
+
+### Fixed
+
+- **`npx -y @ddtcorex/maestro-memory@<version> <bin>` is not a shape this package can
+  ship any more.** npm resolves the bin from the package manifest and only accepts two
+  cases: every bin points at one file, or a bin is named exactly like the unscoped
+  package. With `maestro-memory-mcp` and `maestro-memory-hook` side by side it fails
+  with `could not determine executable to run`, before it reads the name you asked for.
+  The hooks file and `.mcp.json` now install the package with `-p` and then name the
+  bin, which works with any number of bins.
+- A manifest test pins the form: while the package declares more than one bin, every
+  shipped command must use `-p`, so this cannot regress again.
+
 ## [5.1.0] - 2026-11-10
 
 Memory happens without being asked, in Claude Code: a session starts with the project's

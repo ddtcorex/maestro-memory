@@ -120,6 +120,14 @@ claude plugin install maestro-memory --marketplace ddtcorex/maestro-memory
 because the installed plugin is a git clone with no build output, while the server and the hook code
 ship in the npm package.
 
+**Why every shipped command uses `-p`.** npm cannot choose between two differently named bins: with
+more than one, `npx <pkg>@<version> <bin>` fails with `could not determine executable to run` before it
+looks at the name you asked for, because its resolver reads the package manifest and only accepts a
+single shared path or a bin named exactly like the unscoped package. `npx -y -p <pkg>@<version> <bin>`
+installs the package first and then resolves the bin, which works with any number of them. 5.1.0
+shipped the other shape and its own MCP server stopped starting; 5.1.1 fixes the form and pins it with
+a test.
+
 How a session end reads, measured on Claude Code 2.1.322:
 
 ```
