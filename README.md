@@ -1,6 +1,6 @@
 # maestro-memory
 
-Durable memory and todos, stored as plain markdown under `~/.dsh/maestro-memory`, shipped as a
+Durable memory and todos, stored as plain markdown under `~/.maestro-memory`, shipped as a
 DeepSeek Harness (DSH) plugin. The store itself is harness-neutral; the DSH binding is one adapter.
 
 > Give the AI cross-session durable memory and todos — the more you use it, the more it understands you.
@@ -35,7 +35,7 @@ dsh plugin --profile web add link:<path-to>/maestro-memory
     - id: maestro-memory
       name: '@ddtcorex/maestro-memory'
       config:
-        memoryDir: null      # -> ~/.dsh/maestro-memory
+        memoryDir: null      # -> ~/.maestro-memory
         snapshotOrder: 500
         autoMemory: { enabled: false, userMessage: true, desensitize: true } # opt-in
         writeGuard: { enabled: false, threshold: 2 }  # per-turn write watchdog, opt-in
@@ -88,8 +88,9 @@ Five tools: `memory_search`, `memory_context`, `memory_list`, `memory_add`, `mem
 `key` track stays gated: `memory_add` refuses it and `memory_suggest` queues it for human approval,
 exactly as in DSH.
 
-**Start a session with `memory_context`.** Clients with a session-start hook (Claude Code) can call it
-automatically; the rest call it as their first tool use and get the same bounded context DSH injects.
+**Start a session with `memory_context`.** The Claude Code plugin does this for the session it starts
+(see below); every other client calls it as its first tool use and gets the same bounded context DSH
+injects.
 The store lives at `~/.maestro-memory`. Resolution order: `config.memoryDir`, then
 `MAESTRO_MEMORY_DIR`, then an isolated `DSH_HOME` (a path other than `<home>/.dsh`, which is what a
 dry-boot or a test uses), then the neutral root. A store still at an older root moves itself on the
@@ -99,6 +100,52 @@ next boot and writes `migrated-v5.json`; two store roots present is a refusal, n
 `dsh web` itself). A process started before the move keeps the resolved root it computed at startup;
 an old one recreates `~/.dsh/maestro-memory` on its next write. The Memory view reports that stray
 root as `staleLegacyRoot` instead of hiding it.
+
+## Claude Code plugin
+
+This repository is also a Claude Code plugin: one MCP server, one skill, one slash command, and two
+hooks.
+
+```sh
+claude plugin marketplace add ddtcorex/maestro-memory
+claude plugin install maestro-memory --marketplace ddtcorex/maestro-memory
+```
+
+| Hook | Command | What it does |
+|---|---|---|
+| `SessionStart` | `maestro-memory-hook session-start` | prints the same bounded snapshot `memory_context` returns, so the first turn already knows the project |
+| `SessionEnd` | `maestro-memory-hook session-end` | appends one line to `daily/<date>.md` |
+
+`maestro-memory-hook` is a second bin of the same package, called through `npx` at the pinned version
+because the installed plugin is a git clone with no build output, while the server and the hook code
+ship in the npm package.
+
+How a session end reads, measured on Claude Code 2.1.322:
+
+```
+[07:15] session ended · project · - · 0 tools [session:3e4bd521-87ec-4e37-89dd-0b5a3366b8a6]
+```
+
+- The stamp and the file date are UTC, so the two can never disagree.
+- `-` means the payload carried no branch, and `0 tools` means it carried no tool count. 2.1.322 sends
+  `session_id`, `transcript_path`, `cwd` and `hook_event_name`, plus `source` on start and `reason` on
+  end. The line reports what it was told and invents nothing.
+- The `[session:…]` marker is what deduplicates: a second `SessionEnd` for one session writes nothing,
+  while two sessions ending in the same minute get a line each.
+
+Measured cost of one live session: 69-77 ms for the start hook, about 2 KB of text added to the
+context, and no model call anywhere in the path.
+
+**Failure behaviour.** Both modes exit 0 and print nothing when the store is unreadable, when the
+payload is not JSON, or when the package cannot be fetched. `MAESTRO_MEMORY_DEBUG=1` is the only way to
+see a diagnostic, on stderr. A hook that stops a session is worse than one that says nothing.
+
+**`/remember <text>`** writes one durable fact through the same MCP tools, and `key` still goes through
+the suggestion queue for human approval.
+
+**Release order matters.** The hooks call the published package, so publish the npm version first and
+push the plugin tag after. A plugin installed ahead of its package runs a command `npx` cannot resolve,
+and the hooks then fail silently by design.
 
 ## System Prompt Snapshot
 
