@@ -120,6 +120,14 @@ claude plugin install maestro-memory --marketplace ddtcorex/maestro-memory
 because the installed plugin is a git clone with no build output, while the server and the hook code
 ship in the npm package.
 
+**Why every shipped command uses `-p`.** npm cannot choose between two differently named bins: with
+more than one, `npx <pkg>@<version> <bin>` fails with `could not determine executable to run` before it
+looks at the name you asked for, because its resolver reads the package manifest and only accepts a
+single shared path or a bin named exactly like the unscoped package. `npx -y -p <pkg>@<version> <bin>`
+installs the package first and then resolves the bin, which works with any number of them. 5.1.0
+shipped the other shape and its own MCP server stopped starting; 5.1.1 fixes the form and pins it with
+a test.
+
 How a session end reads, measured on Claude Code 2.1.322:
 
 ```
@@ -141,8 +149,11 @@ How a session end reads, measured on Claude Code 2.1.322:
 **What it costs.** The hook process itself is 36-77 ms, but the shipped command reaches it through
 `npx`: measured 704-795 ms per hook with a warm cache, so roughly 1.5 s added to a session start, and
 about 1.4 s for one resolution against the registry. No model call is involved anywhere in the path.
-What it injects is the bounded snapshot, which is capped per lane but can reach about 15 KB (roughly
-3.7k tokens) when every lane is full; the sample store used for testing was 2 KB.
+What it injects is the bounded snapshot, and how much of it arrives depends on a limit measured on
+2.1.322: hook output up to 10,000 bytes is injected as text, and above that the harness writes it to a
+file and injects only a preview of about 2 KB. A full store renders more than that, so the hook keeps
+itself under 9,000 bytes: it renders with tighter caps first, then cuts with a visible marker, and a
+store that already fits renders byte for byte what `memory_context` returns.
 
 **Failure behaviour.** Both modes exit 0 and print nothing when the store is unreadable, when the
 payload is not JSON, or when no store root can be resolved. The `npx` wrapper around them is not

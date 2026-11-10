@@ -9,6 +9,7 @@
  * costs them a wrong project. Returning `''` is always allowed; throwing is not.
  */
 
+import { Buffer } from 'node:buffer'
 import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { MaestroMemoryStore } from '../memory/store.ts'
@@ -118,6 +119,47 @@ export function runHook(mode: HookMode, payload: Record<string, any>, deps: Hook
 /** Said once, instead of guessing which project the session belongs to. */
 export const NO_CWD_NOTICE = '(no project directory in the hook payload; showing global memory only)'
 
+/**
+ * How many bytes of snapshot this hook may print.
+ *
+ * Measured on Claude Code 2.1.322: hook stdout of 10,000 bytes is injected as text,
+ * and 11,000 bytes is written to a file with a ~2 KB preview injected instead, so
+ * everything after the second section disappears from the model's view. A full store
+ * renders 12 KB or more, which is exactly that failure, and it dropped the project
+ * lanes a session needs. The budget stays a kilobyte below the measured limit because
+ * the harness wraps the output in a system reminder.
+ */
+export const HOOK_MAX_BYTES = 9000
+
+/** Caps used only when the default render does not fit, so a small store keeps the
+ *  byte-for-byte parity with `memory_context` that the test above pins. */
+const TIGHT_CAPS = { memory: 1024, user: 1024, key: 3072, recentDaily: 256, autoRecall: 512 } as const
+
+const CLIP_MARKER = '\n[… cut to stay inside the harness hook limit; use memory_search for the rest]'
+
+/** Cut on a character boundary and say so, rather than shipping a mangled tail. */
+function clipTo(text: string, max: number): string {
+  const budget = Math.max(0, max - Buffer.byteLength(CLIP_MARKER, 'utf8'))
+  let out = ''
+  let used = 0
+  for (const ch of text) {
+    const size = Buffer.byteLength(ch, 'utf8')
+    if (used + size > budget) break
+    out += ch
+    used += size
+  }
+  return `${out}${CLIP_MARKER}`
+}
+
+/** The largest render that still fits: full snapshot, then tighter caps, then a cut. */
+function renderWithinBudget(store: MaestroMemoryStore, cwd: string | null, max: number): string {
+  const full = renderSnapshotWithStats(store, { cwd }).text
+  if (Buffer.byteLength(full, 'utf8') <= max) return full
+  const tight = renderSnapshotWithStats(store, { cwd }, { caps: { ...TIGHT_CAPS } }).text
+  if (Buffer.byteLength(tight, 'utf8') <= max) return tight
+  return clipTo(tight, max)
+}
+
 function isReadable(root: string): boolean {
   try {
     accessSync(root, fsConstants.R_OK)
@@ -146,8 +188,10 @@ export function renderSessionStart(payload: Record<string, any>, opts: { root: s
   }
   try {
     const store = new MaestroMemoryStore(opts.root)
-    const text = renderSnapshotWithStats(store, { cwd }).text
-    return cwd ? text : `${text}\n\n${NO_CWD_NOTICE}`
+    const notice = cwd ? '' : `\n\n${NO_CWD_NOTICE}`
+    const budget = HOOK_MAX_BYTES - Buffer.byteLength(notice, 'utf8')
+    const text = renderWithinBudget(store, cwd, budget)
+    return `${text}${notice}`
   } catch (error: any) {
     debug(`session-start render failed: ${error?.message ?? error}`)
     return ''

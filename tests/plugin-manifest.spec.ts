@@ -68,6 +68,19 @@ describe('claude plugin manifest', () => {
     for (const command of commands) expect(command.trimEnd()).toMatch(/2>\/dev\/null$/)
   })
 
+  it('launches both bins through the package form npm can resolve', () => {
+    // npm exec refuses to choose between two differently named bins: with more than
+    // one bin, `npx pkg@version <bin>` dies with "could not determine executable to
+    // run" before it ever looks at the requested name, which is exactly what broke
+    // the MCP server in 5.1.0. Every shipped command must therefore install the
+    // package first with -p/--package and then name the bin it wants.
+    expect(Object.keys(pkg.bin ?? {}).length).toBeGreaterThan(1)
+    expect(server.args.some((arg: string) => arg === '-p' || arg === '--package')).toBe(true)
+    const commands = JSON.stringify(read('hooks/hooks.json')).match(/npx[^"]+/g) ?? []
+    expect(commands.length).toBe(2)
+    for (const command of commands) expect(command).toMatch(/^npx -y (?:-p|--package) /)
+  })
+
   it('declares the hook bin in package.json', () => {
     expect(pkg.bin['maestro-memory-hook']).toBeTruthy()
   })

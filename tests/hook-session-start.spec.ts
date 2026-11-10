@@ -8,8 +8,10 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { renderSessionStart, runHook } from '../src/host/hook/modes.ts'
+import { Buffer } from 'node:buffer'
+import { HOOK_MAX_BYTES, renderSessionStart, runHook } from '../src/host/hook/modes.ts'
 import { createToolHandlers } from '../src/host/mcp/tools.ts'
+import { MaestroMemoryStore } from '../src/host/memory/store.ts'
 
 function seed(root: string) {
   mkdirSync(root, { recursive: true })
@@ -34,6 +36,24 @@ describe('session start hook', () => {
 
   it('says nothing when the store cannot be read', () => {
     expect(renderSessionStart({ cwd: '/work/x' }, { root: '/definitely/missing/store' })).toBe('')
+  })
+
+  it('stays inside the size the harness injects inline', () => {
+    // Measured on Claude Code 2.1.322: a SessionStart hook whose stdout is 10,000
+    // bytes is injected as text, and 11,000 bytes is written to a file with only a
+    // ~2 KB preview injected instead. A snapshot of a full store is 12 KB or more,
+    // which silently dropped the project lanes the session needed most.
+    const root = mkdtempSync(join(tmpdir(), 'hook-start4-'))
+    const store = new MaestroMemoryStore(root)
+    store.add('user', `u${'u'.repeat(3000)}`)
+    store.add('memory', `m${'m'.repeat(3000)}`)
+    store.add('key', `THE-KEY-MARKER ${'k'.repeat(3000)}`, '/work/x', { summary: 'a key rule' })
+    store.add('project', `p${'p'.repeat(4000)}`, '/work/x')
+
+    const out = renderSessionStart({ cwd: '/work/x' }, { root })
+    expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(HOOK_MAX_BYTES)
+    // And the lane that matters for a session still survived the cut.
+    expect(out).toContain('THE-KEY-MARKER')
   })
 
   it('follows MAESTRO_MEMORY_DIR, so a hook never reaches the live store', () => {

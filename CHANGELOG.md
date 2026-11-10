@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] - 2026-11-10
+
+Fixes a regression that 5.1.0 shipped: the second bin broke every `npx` launch of this
+package, including the MCP server the plugin starts.
+
+### Fixed
+
+- **`npx -y @ddtcorex/maestro-memory@<version> <bin>` is not a shape this package can
+  ship any more.** npm resolves the bin from the package manifest and only accepts two
+  cases: every bin points at one file, or a bin is named exactly like the unscoped
+  package. With `maestro-memory-mcp` and `maestro-memory-hook` side by side it fails
+  with `could not determine executable to run`, before it reads the name you asked for.
+  The hooks file and `.mcp.json` now install the package with `-p` and then name the
+  bin, which works with any number of bins.
+- A manifest test pins the form: while the package declares more than one bin, every
+  shipped command must use `-p`, so this cannot regress again.
+- **A large session context was not injected at all.** A `SessionStart` hook whose
+  stdout passes 10,000 bytes is not shown to the model: the harness writes it to a
+  file and injects a preview of roughly 2 KB, so a full store lost its project lanes.
+  The hook now keeps its output under 9,000 bytes, first by rendering with tighter
+  caps and then by cutting with a visible marker, while a store that already fits
+  still renders byte for byte what `memory_context` returns. Measured on the live
+  store: 12.5 KB before, 7 KB after, with every section present.
+
 ## [5.1.0] - 2026-11-10
 
 Memory happens without being asked, in Claude Code: a session starts with the project's
