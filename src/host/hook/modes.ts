@@ -9,12 +9,13 @@
  * costs them a wrong project. Returning `''` is always allowed; throwing is not.
  */
 
-import { accessSync, constants as fsConstants } from 'node:fs'
+import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import { MaestroMemoryStore } from '../memory/store.ts'
 import { renderSnapshotWithStats } from '../prompt/snapshot.ts'
 import { appendEntryAtomicSync, readEntriesSync } from '../storage/atomic-store.ts'
-import { dailyPath, resolveStoreRoot } from '../storage/layout.ts'
+import { readHealth } from '../storage/health.ts'
+import { dailyPath, resolveDshHome, resolveStoreRoot } from '../storage/layout.ts'
 
 export type HookMode = 'session-start' | 'session-end'
 
@@ -71,11 +72,14 @@ export interface HookDeps {
   /** Test seam: stands in for the store resolver. */
   resolveRoot?: () => string
   now?: () => Date
+  /** Test seam: stands in for DSH_HOME when checking for an unmoved store. */
+  dshHome?: string
 }
 
 export interface ModeContext {
   root: string
   now: () => Date
+  dshHome: string
 }
 
 type ModeRunner = (payload: Record<string, any>, ctx: ModeContext) => string
@@ -99,7 +103,7 @@ export function runHook(mode: HookMode, payload: Record<string, any>, deps: Hook
   if (!run) return ''
   try {
     const root = deps.resolveRoot ? deps.resolveRoot() : resolveStoreRoot().root
-    return run(payload ?? {}, { root, now: deps.now ?? (() => new Date()) }) ?? ''
+    return run(payload ?? {}, { root, now: deps.now ?? (() => new Date()), dshHome: deps.dshHome ?? resolveDshHome() }) ?? ''
   } catch (error: any) {
     debug(`${mode} failed: ${error?.message ?? error}`)
     return ''
@@ -147,12 +151,21 @@ export function renderSessionStart(payload: Record<string, any>, opts: { root: s
 
 RUNNERS['session-start'] = (payload, ctx) => renderSessionStart(payload, { root: ctx.root })
 
-/** UTC on purpose: the storage layer keeps its own calendar, and a diary line
- * that printed local time in a UTC-dated file would read as the wrong day. */
+/**
+ * The local calendar, the one the rest of the store already uses: `todayStamp()`
+ * names daily files from it and the prompt's Recent Daily lane reads those names
+ * back. A UTC stamp put a line in a file that nothing else ever opened, which is
+ * how one local day ends up split across two files.
+ */
 function dayStamp(now: Date): string {
-  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(now.getUTCDate()).padStart(2, '0')
-  return `${now.getUTCFullYear()}-${mm}-${dd}`
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${mm}-${dd}`
+}
+
+/** The previous local day, for the dedup check that spans local midnight. */
+function dayBefore(now: Date): string {
+  return dayStamp(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
 }
 
 function text(value: unknown): string {
@@ -188,8 +201,8 @@ function projectName(cwd: string): string {
  * while two sessions in the same minute each get their own line.
  */
 export function buildSessionLine(payload: Record<string, any>, now: Date): string {
-  const hh = String(now.getUTCHours()).padStart(2, '0')
-  const mm = String(now.getUTCMinutes()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
   const cwd = text(payload?.cwd)
   const branch = text(payload?.branch) || '-'
   const raw = Number(payload?.toolCalls)
@@ -207,16 +220,36 @@ export function buildSessionLine(payload: Record<string, any>, now: Date): strin
  * that already finished. The dedup check reads the day's entries and looks for
  * the session marker, never for the timestamp.
  */
-export function recordSessionEnd(payload: Record<string, any>, opts: { root: string; now?: Date }): string {
+export function recordSessionEnd(
+  payload: Record<string, any>,
+  opts: { root: string; now?: Date; dshHome?: string },
+): string {
   const now = opts.now ?? new Date()
   const date = dayStamp(now)
   const line = buildSessionLine(payload, now)
   const sessionId = sessionIdOf(payload)
   try {
+    // This is the only writer that runs without the boot migration. Creating the
+    // new root before the legacy store has moved makes the migration find two
+    // roots, and it then refuses: the store stops being served until a human
+    // decides which one is live. Checked only against a home we were told about,
+    // so a unit test with a scratch root cannot be skipped by machine state.
+    if (opts.dshHome && !existsSync(opts.root)) {
+      const legacy = readHealth({ root: opts.root, dshHome: opts.dshHome }).legacyRoot
+      if (legacy) {
+        debug(`no diary line: the store has not moved yet (${legacy} is still live)`)
+        return ''
+      }
+    }
     const file = dailyPath(opts.root, date)
     if (sessionId) {
       const marker = `[session:${sessionId}]`
-      if (readEntriesSync(file).some((entry) => entry.includes(marker))) return ''
+      // Yesterday as well: a session re-fired just after local midnight must not
+      // gain a second line in the new day's file.
+      const seen = [file, dailyPath(opts.root, dayBefore(now))].some((candidate) =>
+        readEntriesSync(candidate).some((entry) => entry.includes(marker)),
+      )
+      if (seen) return ''
     }
     // Appended through the same locked writer the store uses, but without
     // `store.add`: that path tags the entry with an auto summary taken from its

@@ -57,6 +57,17 @@ describe('claude plugin manifest', () => {
     }
   })
 
+  it('discards the wrapper stderr, so a failed fetch cannot noise up a session', () => {
+    // Measured with an unreachable registry: `npx` exits 1 and prints three npm
+    // error lines on stderr, which the harness surfaces to the human. The package's
+    // own diagnostics stay available by running the command by hand with
+    // MAESTRO_MEMORY_DEBUG=1; the hook itself must be silent.
+    const hooks = JSON.stringify(read('hooks/hooks.json'))
+    const commands = hooks.match(/npx[^"]+/g) ?? []
+    expect(commands.length).toBe(2)
+    for (const command of commands) expect(command.trimEnd()).toMatch(/2>\/dev\/null$/)
+  })
+
   it('declares the hook bin in package.json', () => {
     expect(pkg.bin['maestro-memory-hook']).toBeTruthy()
   })
