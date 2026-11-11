@@ -68,6 +68,9 @@ const INDEX_ENTRY_ID_RE = /\[id:\s*([0-9a-f]{8})\]/i
 export function buildIndexLane(all: readonly string[], injected: readonly string[], cap = SNAPSHOT_INDEX_LANE_CAP): string[] {
   if (!all.length) return []
   const shown = new Set(injected)
+  // An entry copied into two buckets keeps its id; list it once, and not at all
+  // when the key lane already shows it in full.
+  const seenIds = new Set(injected.map((entry) => INDEX_ENTRY_ID_RE.exec(entry)?.[1]).filter(Boolean))
   const lines: string[] = []
   let used = 0
   for (let i = all.length - 1; i >= 0; i--) {
@@ -76,6 +79,8 @@ export function buildIndexLane(all: readonly string[], injected: readonly string
     const summary = parseEntrySummary(entry)
     if (!summary) continue
     const id = INDEX_ENTRY_ID_RE.exec(entry)?.[1]
+    if (id && seenIds.has(id)) continue
+    if (id) seenIds.add(id)
     const line = id ? `- [id:${id}] ${summary}` : `- ${summary}`
     const cost = Buffer.byteLength(line, 'utf8') + 1
     if (used + cost > cap) break
@@ -183,7 +188,14 @@ function neutralizePromptBraces(text: string): string {
   return text.replace(/\{{2,}/g, '{').replace(/\}{2,}/g, '}')
 }
 
-function keyEntriesOverChain(store: MaestroMemoryStore, ctx: SnapshotContext): string[] {
+/**
+ * Key entries over the bucket chain, in two orders (both newest last, as
+ * `fitSection` and `buildIndexLane` take from the end):
+ * - `byNearest`: farthest bucket first, so the nearest wins the key lane;
+ * - `interleaved`: the buckets' newest entries taken in turn, so the index lane
+ *   lists every bucket and a growing sub-repo cannot hide the workspace.
+ */
+function keyEntriesOverChain(store: MaestroMemoryStore, ctx: SnapshotContext): { byNearest: string[]; interleaved: string[] } {
   const cwd = ctx.cwd as string
   const opts = ctx.branch ? { branch: ctx.branch } : {}
   let chain: string[] = []
@@ -192,8 +204,18 @@ function keyEntriesOverChain(store: MaestroMemoryStore, ctx: SnapshotContext): s
   } catch {
     chain = []
   }
-  if (chain.length === 0) return store.list('key', cwd, opts)
-  return chain.reverse().flatMap((dir) => store.list('key', dir, opts))
+  if (chain.length === 0) {
+    const own = store.list('key', cwd, opts)
+    return { byNearest: own, interleaved: own }
+  }
+  const buckets = chain.map((dir) => store.list('key', dir, opts))
+  const byNearest = [...buckets].reverse().flat()
+  const newestFirst: string[] = []
+  const depth = Math.max(...buckets.map((b) => b.length))
+  for (let k = 1; k <= depth; k++) {
+    for (const bucket of buckets) if (bucket.length >= k) newestFirst.push(bucket[bucket.length - k]!)
+  }
+  return { byNearest, interleaved: newestFirst.reverse() }
 }
 
 /** Per-section cost of one render. */
@@ -265,11 +287,12 @@ export function renderSnapshotWithStats(
       }
     } catch {}
   }
-  // Key entries from the cwd's bucket and every ancestor workspace's, farthest
-  // first: fitSection keeps from the end, so the nearest bucket wins the budget and
-  // the workspace fills what is left. A cwd with no bucket in its chain keeps its
-  // own (empty) list, which renders exactly as before.
-  const keyAll = ctx.cwd ? keyEntriesOverChain(store, ctx) : []
+  // Key entries from the cwd's bucket and every ancestor workspace's. The key lane
+  // lets the nearest bucket win; the index lane takes from each bucket in turn. A
+  // cwd with no bucket in its chain keeps its own (empty) list, which renders
+  // exactly as before.
+  const chained = ctx.cwd ? keyEntriesOverChain(store, ctx) : { byNearest: [], interleaved: [] }
+  const keyAll = chained.byNearest
   const key = ctx.cwd
     ? fitSection(keyAll, caps.key, SNAPSHOT_SECTION_MAX_ENTRIES.key)
     : { kept: [], bytes: 0, dropped: 0, truncated: 0 }
@@ -282,7 +305,7 @@ export function renderSnapshotWithStats(
   // This is what makes "I know a rule exists, find it" possible without loading
   // 300 KB of prose; memory_search then opens the one entry that matters.
   if (ctx.cwd) {
-    const lane = buildIndexLane(keyAll, key.kept, caps.keyIndex)
+    const lane = buildIndexLane(chained.interleaved, key.kept, caps.keyIndex)
     if (lane.length) {
       parts.push(`# Key Memory Index (search with memory_search)\n${lane.join('\n')}`)
       sections.push({ key: 'keyIndex', cap: caps.keyIndex, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })

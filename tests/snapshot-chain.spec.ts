@@ -82,6 +82,34 @@ describe('snapshot over the chain', () => {
     expect(keyLane).not.toContain('workspace entry 0 ')
   })
 
+  it('keeps workspace rules in the index when the sub-repo bucket outgrows both lanes', () => {
+    // A growing sub-repo must not hide the workspace: that is why nearest-only
+    // was rejected. The index lane takes from each bucket in turn.
+    for (let i = 0; i < 30; i++) store.add('key', `workspace entry ${i}`, ws, { summary: `workspace rule ${i} padded to a realistic summary width` })
+    for (let i = 0; i < 60; i++) store.add('key', `sub entry ${i} ${'s'.repeat(600)}`, sub, { summary: `sub rule ${i} padded to a realistic summary width here` })
+    const text = render(sub)
+    const index = (text.split('# Key Memory Index')[1] ?? '').split('\n').filter((l) => l.startsWith('- '))
+    const fromWorkspace = index.filter((l) => l.includes('workspace rule')).length
+    const fromSub = index.filter((l) => l.includes('sub rule')).length
+    expect(fromSub).toBeGreaterThan(0)
+    expect(fromWorkspace).toBeGreaterThanOrEqual(fromSub - 1)
+    expect(index.some((l) => l.includes('workspace rule 29 '))).toBe(true)
+  })
+
+  it('lists an entry copied into two buckets once', () => {
+    store.add('key', 'shared rule body', ws, { summary: 'shared rule' })
+    const wsLine = store.list('key', ws)[0]!
+    const id = /\[id:([0-9a-f]{8})\]/.exec(wsLine)?.[1]
+    expect(id).toBeTruthy()
+    // Simulate a migration that copied the same entry, id included, into the sub-repo.
+    for (let i = 0; i < 8; i++) store.add('key', `filler ${i} ${'f'.repeat(600)}`, sub, { summary: `filler ${i}` })
+    const subKey = projectDir(root, sub) + '/KEY.md'
+    const { appendFileSync } = require('node:fs')
+    appendFileSync(subKey, `\n§\n${wsLine}`)
+    const text = render(sub)
+    expect(text.split(`[id:${id}]`).length - 1).toBe(1)
+  })
+
   it('renders a cwd with no bucket in the chain exactly as before', () => {
     store.add('memory', 'a global rule')
     const lonely = join(base, 'elsewhere')

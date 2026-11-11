@@ -174,15 +174,16 @@ is an error, such as a denied `Write` or a `memory_add` to a server that never c
 neither side) with a reason that
 names `memory_add` (`target=daily`) and `memory_suggest` (`target=key`); the model may also answer that
 nothing is worth keeping. Claude Code marks the follow-up stop with `stop_hook_active`, and the hook
-never blocks that one, so it cannot loop. It reads at most the last 8 MiB of the transcript, has no
+never blocks that one, so it cannot loop; after the session has answered, it is not asked again until
+new work happens. It reads at most the last 8 MiB of the transcript, has no
 dependencies, and runs with `node` straight from the plugin directory, skipping `npx`: measured 50-58 ms
 on the three largest transcripts on the development machine (58-82 MB). Set
 `MAESTRO_MEMORY_STOP_EDITS` to change the edit threshold, or `MAESTRO_MEMORY_STOP_NUDGE=0` to turn it off.
 
 **Project memory follows the workspace.** A project bucket is `sha1(realpath(cwd))`, so a session
 started in a sub-repo used to read an empty bucket while the workspace above it held every rule. The
-key and index lanes now read the cwd's bucket and each ancestor's that exists, nearest first, stopping
-below `$HOME`. Writes still go to the cwd's own bucket. The lanes lean on the index: up to six key
+key and index lanes now read the cwd's bucket and each ancestor's that exists, stopping below `$HOME`:
+the key lane lets the nearest bucket win, the index lane takes from each bucket in turn. Writes still go to the cwd's own bucket. The lanes lean on the index: up to six key
 entries in full, then `- [id] summary` lines for the rest (`keyIndex`), which `memory_search` opens.
 
 **A custom store path needs one more variable.** The hook process cannot see the DSH profile, so
