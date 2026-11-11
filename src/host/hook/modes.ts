@@ -134,7 +134,7 @@ export const HOOK_MAX_BYTES = 9000
 
 /** Caps used only when the default render does not fit, so a small store keeps the
  *  byte-for-byte parity with `memory_context` that the test above pins. */
-const TIGHT_CAPS = { memory: 1024, user: 1024, key: 3072, recentDaily: 256, autoRecall: 512 } as const
+const TIGHT_CAPS = { memory: 1024, user: 1024, key: 1536, keyIndex: 3072, recentDaily: 256, autoRecall: 512 } as const
 
 const CLIP_MARKER = '\n[… cut to stay inside the harness hook limit; use memory_search for the rest]'
 

@@ -24,7 +24,16 @@ export interface SnapshotContext {
 }
 
 /** Default per-section byte budgets for the snapshot prompt. */
-export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 6144, recentDaily: 512, autoRecall: 1024 } as const
+/**
+ * Default per-section byte budgets for the snapshot prompt.
+ *
+ * The project lanes lean on the index: a few key entries in full, and a wide
+ * `keyIndex` lane of `- [id] summary` lines, so a session knows most rules exist
+ * and opens the one it needs with memory_search. Measured on the live store
+ * (2026-11-11): 195 key entries, every one summarized, and the old split (6 KB of
+ * bodies, 768 B of index) showed 5 entries in full and 7 by name.
+ */
+export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 3072, keyIndex: 2560, recentDaily: 512, autoRecall: 1024 } as const
 
 /**
  * Default per-section entry budgets. A byte cap alone lets one huge entry own
@@ -32,14 +41,14 @@ export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 6144, rece
  * 2,293-byte global entry consuming a 2,048-byte section while a hard rule sat
  * behind it, never injected.
  */
-export const SNAPSHOT_SECTION_MAX_ENTRIES = { memory: 8, user: 8, key: 12, recentDaily: 2, autoRecall: 4 } as const
+export const SNAPSHOT_SECTION_MAX_ENTRIES = { memory: 8, user: 8, key: 6, recentDaily: 2, autoRecall: 4 } as const
 
 /**
- * Byte budget for the search index lane, shared by the key and project lanes.
- * Small on purpose: the lane exists to say "this exists, search for it", not to
- * carry content. Anything it did not lift stays reachable through memory_search.
+ * Default byte budget for the search index lane; a render overrides it through
+ * `caps.keyIndex`. The lane says "this exists, search for it" and carries no
+ * content; anything it did not lift stays reachable through memory_search.
  */
-export const SNAPSHOT_INDEX_LANE_CAP = 768
+export const SNAPSHOT_INDEX_LANE_CAP: number = SNAPSHOT_SECTION_CAPS.keyIndex
 
 const INDEX_ENTRY_ID_RE = /\[id:\s*([0-9a-f]{8})\]/i
 
@@ -266,10 +275,10 @@ export function renderSnapshotWithStats(
   // This is what makes "I know a rule exists, find it" possible without loading
   // 300 KB of prose; memory_search then opens the one entry that matters.
   if (ctx.cwd) {
-    const lane = buildIndexLane(keyAll, key.kept)
+    const lane = buildIndexLane(keyAll, key.kept, caps.keyIndex)
     if (lane.length) {
       parts.push(`# Key Memory Index (search with memory_search)\n${lane.join('\n')}`)
-      sections.push({ key: 'keyIndex', cap: SNAPSHOT_INDEX_LANE_CAP, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })
+      sections.push({ key: 'keyIndex', cap: caps.keyIndex, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })
     }
   }
 
