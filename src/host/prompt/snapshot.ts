@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer'
 import { existsSync, readFileSync } from 'node:fs'
 import type { MaestroMemoryStore } from '../memory/store.ts'
 import { entryHeadPrefix, parseEntrySummary } from '../storage/legacy-format.ts'
-import { projectReferencePath, userMemoryPath } from '../storage/layout.ts'
+import { projectChain, projectReferencePath, userMemoryPath } from '../storage/layout.ts'
 import { appendEntryAtomicSync } from '../storage/atomic-store.ts'
 
 export interface SnapshotContext {
@@ -16,6 +16,11 @@ export interface SnapshotContext {
    * per-achievement cadence instead of the per-turn one.
    */
   isSubagent?: boolean
+  /**
+   * Where the ancestor walk for project memory stops (see `projectChain`).
+   * Defaults to the user's home directory; tests pass their own.
+   */
+  home?: string
 }
 
 /** Default per-section byte budgets for the snapshot prompt. */
@@ -162,6 +167,19 @@ function neutralizePromptBraces(text: string): string {
   return text.replace(/\{{2,}/g, '{').replace(/\}{2,}/g, '}')
 }
 
+function keyEntriesOverChain(store: MaestroMemoryStore, ctx: SnapshotContext): string[] {
+  const cwd = ctx.cwd as string
+  const opts = ctx.branch ? { branch: ctx.branch } : {}
+  let chain: string[] = []
+  try {
+    chain = projectChain(store.resolveRoot(), cwd, ctx.home)
+  } catch {
+    chain = []
+  }
+  if (chain.length === 0) return store.list('key', cwd, opts)
+  return chain.reverse().flatMap((dir) => store.list('key', dir, opts))
+}
+
 /** Per-section cost of one render. */
 export interface SectionStats {
   key: 'memory' | 'user' | 'key' | 'keyIndex' | 'projectContext' | 'reference' | 'recentDaily'
@@ -231,7 +249,11 @@ export function renderSnapshotWithStats(
       }
     } catch {}
   }
-  const keyAll = ctx.cwd ? store.list('key', ctx.cwd, ctx.branch ? { branch: ctx.branch } : {}) : []
+  // Key entries from the cwd's bucket and every ancestor workspace's, farthest
+  // first: fitSection keeps from the end, so the nearest bucket wins the budget and
+  // the workspace fills what is left. A cwd with no bucket in its chain keeps its
+  // own (empty) list, which renders exactly as before.
+  const keyAll = ctx.cwd ? keyEntriesOverChain(store, ctx) : []
   const key = ctx.cwd
     ? fitSection(keyAll, caps.key, SNAPSHOT_SECTION_MAX_ENTRIES.key)
     : { kept: [], bytes: 0, dropped: 0, truncated: 0 }
