@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] - 2026-11-11
+
+The shared store becomes the memory a Claude Code session actually uses.
+
+### Added
+
+- **A `Stop` hook that asks for a write.** When a session made five file edits, or ran a command that
+  commits, pushes, tags or merges, since its last `memory_add` or `memory_suggest`, the stop is blocked
+  once with a reason naming those tools. It never writes, never calls a model, never blocks the
+  follow-up stop, and stays silent on any error. Plain ESM run with `node` from the plugin directory;
+  43-51 ms on 58-82 MB transcripts. `MAESTRO_MEMORY_STOP_EDITS` and `MAESTRO_MEMORY_STOP_NUDGE=0`
+  tune or disable it.
+- **Project memory from ancestor workspaces.** The key and index lanes read the cwd's bucket and every
+  ancestor bucket below `$HOME`, nearest first (`projectChain`). A session in a sub-repo now sees the
+  workspace's rules; writes are unchanged.
+- **A closing note for MCP clients** (`MCP_CLIENT_TURN_END`), used by `memory_context` and the
+  session-start hook. It names `memory_add` and `memory_suggest` and drops DSH's `maestro_todo`. DSH
+  keeps its note; the body above the note is unchanged.
+
+### Changed
+
+- **Index before bodies.** Key bodies are capped at 3 KB and 6 entries; the index lane has its own
+  `keyIndex` cap (2560 bytes, 3072 in the hook's tight render). On the development store the
+  session-start hook went from 13 rules listed at the workspace root and none in a sub-repo to 37 and
+  31, at 8675 and 6468 bytes, under the 9000 byte hook budget.
+
 ## [5.2.0] - 2026-11-10
 
 The `key` track stops being unreachable from Claude Code.

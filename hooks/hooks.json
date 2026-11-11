@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @ddtcorex/maestro-memory@5.2.0 maestro-memory-hook session-start 2>/dev/null",
+            "command": "npx -y -p @ddtcorex/maestro-memory@5.3.0 maestro-memory-hook session-start 2>/dev/null",
             "timeout": 30
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p @ddtcorex/maestro-memory@5.2.0 maestro-memory-hook session-end 2>/dev/null",
+            "command": "npx -y -p @ddtcorex/maestro-memory@5.3.0 maestro-memory-hook session-end 2>/dev/null",
             "timeout": 30
           }
         ]

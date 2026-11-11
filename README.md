@@ -105,7 +105,7 @@ root as `staleLegacyRoot` instead of hiding it.
 
 ## Claude Code plugin
 
-This repository is also a Claude Code plugin: one MCP server, one skill, one slash command, and two
+This repository is also a Claude Code plugin: one MCP server, one skill, one slash command, and three
 hooks.
 
 ```sh
@@ -116,6 +116,7 @@ claude plugin install maestro-memory --marketplace ddtcorex/maestro-memory
 | Hook | Command | What it does |
 |---|---|---|
 | `SessionStart` | `maestro-memory-hook session-start` | prints the same bounded snapshot `memory_context` returns for the payload's `cwd`, so the first turn already knows the project |
+| `Stop` | `node hooks/stop.mjs` | asks the session once to write before it stops, when it did work and recorded nothing |
 | `SessionEnd` | `maestro-memory-hook session-end` | appends one line to `daily/<date>.md` |
 
 `maestro-memory-hook` is a second bin of the same package, called through `npx` at the pinned version
@@ -163,6 +164,24 @@ silent: with the registry unreachable it exits 1 and prints npm errors on stderr
 shows to the human, so the shipped command discards stderr with `2>/dev/null`. Run the command by hand
 with `MAESTRO_MEMORY_DEBUG=1` to see what it would have said. A hook that stops a session is worse than
 one that says nothing.
+
+**The `Stop` hook asks for a write; it never writes.** The session-start text tells the model to record
+its work, but text is not enforced, and Claude Code also carries its own file memory, which tends to
+win. At each turn end the hook reads the transcript back to the last `memory_add` or `memory_suggest`
+call (any server prefix). If it finds five file edits (`Edit`, `Write`, `NotebookEdit`) or one command
+that commits, pushes, creates a tag or merges since then, it blocks the stop once with a reason that
+names `memory_add` (`target=daily`) and `memory_suggest` (`target=key`); the model may also answer that
+nothing is worth keeping. Claude Code marks the follow-up stop with `stop_hook_active`, and the hook
+never blocks that one, so it cannot loop. It reads at most the last 8 MiB of the transcript, has no
+dependencies, and runs with `node` straight from the plugin directory, skipping `npx`: measured 43-51 ms
+on the three largest transcripts on the development machine (58-82 MB). Set
+`MAESTRO_MEMORY_STOP_EDITS` to change the edit threshold, or `MAESTRO_MEMORY_STOP_NUDGE=0` to turn it off.
+
+**Project memory follows the workspace.** A project bucket is `sha1(realpath(cwd))`, so a session
+started in a sub-repo used to read an empty bucket while the workspace above it held every rule. The
+key and index lanes now read the cwd's bucket and each ancestor's that exists, nearest first, stopping
+below `$HOME`. Writes still go to the cwd's own bucket. The lanes lean on the index: up to six key
+entries in full, then `- [id] summary` lines for the rest (`keyIndex`), which `memory_search` opens.
 
 **A custom store path needs one more variable.** The hook process cannot see the DSH profile, so
 `config.memoryDir` alone does not reach it. If you set `memoryDir` in the profile, set
