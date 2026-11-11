@@ -24,6 +24,18 @@ function toolLine(name: string, input: Record<string, unknown> = {}, sidechain =
 }
 const edit = () => toolLine('Edit', { file_path: '/r/a.ts', old_string: 'a', new_string: 'b' })
 const bash = (command: string) => toolLine('Bash', { command, description: 'd' })
+function withId(line: string, id: string): string {
+  const entry = JSON.parse(line)
+  entry.message.content[0].id = id
+  return JSON.stringify(entry)
+}
+function resultLine(id: string, isError: boolean): string {
+  return JSON.stringify({
+    type: 'user',
+    isSidechain: false,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: isError ? 'denied' : 'ok' }] },
+  })
+}
 const userLine = JSON.stringify({ type: 'user', isSidechain: false, message: { role: 'user', content: 'go' } })
 
 const decide = (lines: string[], env: Record<string, string | undefined> = {}, stopHookActive = false) =>
@@ -78,6 +90,36 @@ describe('decideStop', () => {
 
   it('a write earlier than the progress does not discharge it', () => {
     const lines = [toolLine('mcp__m__memory_add', {}), bash('git commit -m z')]
+    expect(decide(lines).block).toBe(true)
+  })
+
+  it('does not count a call whose result is an error (denied or failed)', () => {
+    // Measured live on 2.1.322: five Write calls refused by permissions, then a
+    // block. Work that never happened is not progress.
+    const lines: string[] = []
+    for (let i = 0; i < 5; i++) {
+      lines.push(withId(toolLine('Write', { file_path: `/r/${i}.txt`, content: 'x' }), `toolu_${i}`))
+      lines.push(resultLine(`toolu_${i}`, true))
+    }
+    lines.push(withId(bash('git commit -m x'), 'toolu_c'), resultLine('toolu_c', true))
+    expect(decide(lines)).toEqual({ block: false })
+  })
+
+  it('a memory write that failed does not discharge the duty', () => {
+    const lines = [
+      bash('git commit -m x'),
+      withId(toolLine('mcp__plugin_maestro-memory_maestro-memory__memory_add', { target: 'daily' }), 'toolu_m'),
+      resultLine('toolu_m', true),
+    ]
+    expect(decide(lines).block).toBe(true)
+  })
+
+  it('still counts calls whose result succeeded', () => {
+    const lines: string[] = []
+    for (let i = 0; i < 5; i++) {
+      lines.push(withId(toolLine('Write', { file_path: `/r/${i}.txt`, content: 'x' }), `toolu_${i}`))
+      lines.push(resultLine(`toolu_${i}`, false))
+    }
     expect(decide(lines).block).toBe(true)
   })
 

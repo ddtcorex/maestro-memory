@@ -60,17 +60,28 @@ function isShipCommand(command) {
   return command.split(/&&|\|\||;|\||\n/).some(isShipSegment)
 }
 
-function toolUses(line) {
+/** The content blocks of a main-thread line of the given type, or `[]`. */
+function blocks(line, type) {
   let entry
   try {
     entry = JSON.parse(line)
   } catch {
     return []
   }
-  if (!entry || typeof entry !== 'object' || entry.type !== 'assistant' || entry.isSidechain === true) return []
+  if (!entry || typeof entry !== 'object' || entry.type !== type || entry.isSidechain === true) return []
   const content = entry.message?.content
-  if (!Array.isArray(content)) return []
-  return content.filter((block) => block && block.type === 'tool_use' && typeof block.name === 'string')
+  return Array.isArray(content) ? content.filter((block) => block && typeof block === 'object') : []
+}
+
+function toolUses(line) {
+  return blocks(line, 'assistant').filter((block) => block.type === 'tool_use' && typeof block.name === 'string')
+}
+
+/** Ids of tool calls whose result is an error: denied by permissions, or failed. */
+function failedIds(line) {
+  return blocks(line, 'user')
+    .filter((block) => block.type === 'tool_result' && block.is_error === true && typeof block.tool_use_id === 'string')
+    .map((block) => block.tool_use_id)
 }
 
 function threshold(env) {
@@ -88,14 +99,22 @@ export function decideStop(lines, { stopHookActive, env = {} }) {
   const needEdits = threshold(env)
   let edits = 0
   let shipped = false
+  // A result always follows its call, so walking newest first meets the error
+  // before the call it belongs to. A call that failed (a denied Write, a memory
+  // write to a server that never connected) neither counts as work nor
+  // discharges the duty.
+  const failed = new Set()
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
-    if (!line || !line.includes('"tool_use"')) continue
+    if (!line) continue
+    if (line.includes('"tool_result"')) for (const id of failedIds(line)) failed.add(id)
+    if (!line.includes('"tool_use"')) continue
     const uses = toolUses(line)
     // Within one message, a write after the progress discharges it; a write
     // before it does not. Walk the blocks newest first as well.
     for (let j = uses.length - 1; j >= 0; j--) {
       const use = uses[j]
+      if (typeof use.id === 'string' && failed.has(use.id)) continue
       if (MEMORY_WRITE.test(use.name)) return verdict(edits, shipped, needEdits)
       if (FILE_TOOLS.has(use.name)) edits++
       else if (use.name === 'Bash' && isShipCommand(use.input?.command)) shipped = true

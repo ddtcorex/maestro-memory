@@ -26,9 +26,11 @@ The shared store becomes the memory a Claude Code session actually uses.
 ### Changed
 
 - **Index before bodies.** Key bodies are capped at 3 KB and 6 entries; the index lane has its own
-  `keyIndex` cap (2560 bytes, 3072 in the hook's tight render). On the development store the
-  session-start hook went from 13 rules listed at the workspace root and none in a sub-repo to 37 and
-  31, at 8675 and 6468 bytes, under the 9000 byte hook budget.
+  `keyIndex` cap (2560 bytes, 3072 in the hook's tight render). On the development store (195 key
+  entries of about 1 KB each) the session-start hook at the workspace root went from 3 entries in full
+  and 7 by name (7996 bytes) to 1 in full and 31 by name (8582 bytes); in a sub-repo it went from no
+  project memory (3680 bytes) to 1 in full and 31 by name (6375 bytes). All under the 9000 byte budget,
+  none clipped. The trade is fewer bodies for many more names, which `memory_search` opens.
 
 ## [5.2.0] - 2026-11-10
 
