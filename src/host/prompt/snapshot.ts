@@ -21,6 +21,13 @@ export interface SnapshotContext {
    * Defaults to the user's home directory; tests pass their own.
    */
   home?: string
+  /**
+   * Who reads the snapshot. `dsh` (the default) has the `memory` and
+   * `maestro_todo` tools; `mcp` is any client of the MCP server (Claude Code,
+   * Codex, Cursor), which has `memory_add` and `memory_suggest` and no todo tool.
+   * Only the closing note differs.
+   */
+  host?: 'dsh' | 'mcp'
 }
 
 /** Default per-section byte budgets for the snapshot prompt. */
@@ -342,7 +349,9 @@ export function renderSnapshotWithStats(
   // under bulk delegation would flood the tracks.
   const discipline = ctx.isSubagent
     ? SUBAGENT_TURN_END
-    : `---\nEnd of every turn — if this turn produced meaningful progress (code, decisions, learnings, or next steps): 1. Write daily via memory entries (daily in one call, skip if idle/waiting or no new information — never write entries containing only 'Idle' or placeholders). 2. For important project decisions (convention, incident, infra) use memory_suggest target=key with reason, not memory add. 3. Check maestro_todo list only if relevant (bounded, max 8).`
+    : ctx.host === 'mcp'
+      ? MCP_CLIENT_TURN_END
+      : `---\nEnd of every turn — if this turn produced meaningful progress (code, decisions, learnings, or next steps): 1. Write daily via memory entries (daily in one call, skip if idle/waiting or no new information — never write entries containing only 'Idle' or placeholders). 2. For important project decisions (convention, incident, infra) use memory_suggest target=key with reason, not memory add. 3. Check maestro_todo list only if relevant (bounded, max 8).`
   // Defensive: strip any pre-existing discipline entry (should never occur — parts is fresh per call)
   // then append exactly once so the note is guaranteed last even for empty stores or repeated calls.
   const deduped = parts.filter((p) => p !== discipline)
@@ -384,6 +393,15 @@ export function renderSnapshot(
  * intent at the cadence a subagent actually has: one entry per independent
  * achievement, nothing when there is nothing to report.
  */
+/**
+ * Closing note for an MCP client session (the session-start hook and the
+ * `memory_context` tool). It names the tools that client has, and says this is
+ * the session's one memory store: Claude Code also carries its own file memory,
+ * and a note that does not say which store is meant loses to the harness's own.
+ */
+export const MCP_CLIENT_TURN_END = `---
+This is the single memory store for this session, shared with every other agent on the machine. When a turn produced code, a decision or a lesson, call memory_add with target=daily (what changed, the evidence, what is left). For a convention, incident or infra decision, call memory_suggest with target=key and a reason. Skip turns that only answered a question.`
+
 const SUBAGENT_TURN_END = `---
 Turn end (subagent session) — only after completing an independent achievement (a substantive deliverable, a key decision, or a pitfall conclusion), write ONE concise entry with a single memory add; for important conclusions use memory_suggest target=key with reason. Skip entirely when there is no independent achievement — do not write for writing's sake. The per-turn daily cadence applies to human-facing sessions only.`
 

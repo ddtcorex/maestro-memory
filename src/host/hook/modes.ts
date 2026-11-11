@@ -176,9 +176,9 @@ function queueNotice(root: string): string {
 
 /** The largest render that still fits: full snapshot, then tighter caps, then a cut. */
 function renderWithinBudget(store: MaestroMemoryStore, cwd: string | null, max: number): string {
-  const full = renderSnapshotWithStats(store, { cwd }).text
+  const full = renderSnapshotWithStats(store, { cwd, host: 'mcp' }).text
   if (Buffer.byteLength(full, 'utf8') <= max) return full
-  const tight = renderSnapshotWithStats(store, { cwd }, { caps: { ...TIGHT_CAPS } }).text
+  const tight = renderSnapshotWithStats(store, { cwd, host: 'mcp' }, { caps: { ...TIGHT_CAPS } }).text
   if (Buffer.byteLength(tight, 'utf8') <= max) return tight
   return clipTo(tight, max)
 }

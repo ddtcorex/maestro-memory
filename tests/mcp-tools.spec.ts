@@ -144,13 +144,20 @@ describe('mcp tool layer — review follow-up', () => {
     expect(h.add({ target: 'project', content: 'x' }).text).toBe(REFUSAL_CWD_REQUIRED)
   })
 
-  it('renders exactly the snapshot the DSH binding renders', async () => {
-    const { renderSnapshotWithStats } = await import('../src/host/prompt/snapshot.ts')
+  it('renders the snapshot the DSH binding renders, apart from the closing note', async () => {
+    // The body is shared byte for byte; only the closing note names the tools an
+    // MCP client has (memory_add, memory_suggest) instead of DSH's.
+    const { renderSnapshotWithStats, MCP_CLIENT_TURN_END } = await import('../src/host/prompt/snapshot.ts')
     const { MaestroMemoryStore } = await import('../src/host/memory/store.ts')
     seed('MEMORY.md', '[2026-09-01] [id:aaaaaaaa] a durable note')
     const h = createToolHandlers({ root })
-    const expected = renderSnapshotWithStats(new MaestroMemoryStore(root), { cwd: '/work/x' }).text
-    expect(h.context({ cwd: '/work/x' }).text).toBe(expected)
+    const store = new MaestroMemoryStore(root)
+    const text = h.context({ cwd: '/work/x' }).text
+    expect(text).toBe(renderSnapshotWithStats(store, { cwd: '/work/x', host: 'mcp' }).text)
+    const dsh = renderSnapshotWithStats(store, { cwd: '/work/x' }).text
+    const body = (t: string) => t.slice(0, t.lastIndexOf('\n---\n'))
+    expect(body(text)).toBe(body(dsh))
+    expect(text.endsWith(MCP_CLIENT_TURN_END)).toBe(true)
   })
 })
 

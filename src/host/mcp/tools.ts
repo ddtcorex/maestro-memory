@@ -129,7 +129,7 @@ export function createToolHandlers(opts: HandlerOptions): ToolHandlers {
       const branch = typeof args.branch === 'string' && args.branch.trim() ? args.branch.trim() : undefined
       // No session fields on purpose: this text must never trigger the USER.md
       // bootstrap write that a DSH session performs on its first turn.
-      const rendered = renderSnapshotWithStats(store, { cwd, branch })
+      const rendered = renderSnapshotWithStats(store, { cwd, branch, host: 'mcp' })
       return { text: rendered.text }
     },
 
