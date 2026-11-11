@@ -73,6 +73,36 @@ describe('decideStop', () => {
     },
   )
 
+  it.each([
+    'git -c user.name=x commit -m y',
+    'GIT_TRACE=1 git push origin b',
+    'env A=b git commit -m z',
+    'git --no-pager tag v2',
+    'git -C "/a b" commit -m q',
+  ])('counts ship commands behind options and env prefixes: %s', (command) => {
+    expect(decide([bash(command)]).block).toBe(true)
+  })
+
+  it.each([
+    'git merge-base HEAD origin/master',
+    'git merge-tree a b',
+    'git commit-tree abc -m x',
+    'git push --dry-run origin b',
+    'git commit --dry-run',
+    'git merge --abort',
+    'git tag -d v1',
+    'git tag --delete v1',
+    'git tag -n',
+    'git tag --contains abc',
+    'git tag --list',
+    'echo "done; git push later"',
+    "printf '%s\\n' 'git commit -m x'",
+    "cat > notes.md <<'EOF'\ngit push origin x\nEOF",
+    'cat > notes.md <<EOF\ngit commit -m y\nEOF\necho ok',
+  ])('does not count non-shipping commands: %s', (command) => {
+    expect(decide([bash(command)])).toEqual({ block: false })
+  })
+
   it.each(['grep -n commit file', 'echo "push it"', 'git log --grep=merge', 'git status'])(
     'ignores commands that only mention the words: %s',
     (command) => {
@@ -121,6 +151,23 @@ describe('decideStop', () => {
       lines.push(resultLine(`toolu_${i}`, false))
     }
     expect(decide(lines).block).toBe(true)
+  })
+
+  it('asks once per stretch of work: a previous block of ours ends the window', () => {
+    // Measured on 2.1.322: the block reaches the model as a meta user line whose
+    // string content starts with "Stop hook feedback:" and carries our reason.
+    const feedback = JSON.stringify({ type: 'user', isSidechain: false, isMeta: true, message: { role: 'user', content: `Stop hook feedback:\n${STOP_REASON}` } })
+    const said = JSON.stringify({ type: 'assistant', isSidechain: false, message: { role: 'assistant', content: [{ type: 'text', text: 'Nothing worth keeping.' }] } })
+    const base = [edit(), edit(), edit(), edit(), edit(), feedback, said]
+    // A later question-only turn must not be blocked again.
+    expect(decide([...base, userLine, said])).toEqual({ block: false })
+    // New work after the block starts a new window.
+    expect(decide([...base, userLine, bash('git push origin x')]).block).toBe(true)
+  })
+
+  it('another hook feedback line does not end the window', () => {
+    const other = JSON.stringify({ type: 'user', isSidechain: false, isMeta: true, message: { role: 'user', content: 'Stop hook feedback:\nrun the linter' } })
+    expect(decide([edit(), edit(), edit(), edit(), edit(), other]).block).toBe(true)
   })
 
   it('skips sidechain lines', () => {

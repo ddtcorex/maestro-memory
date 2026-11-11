@@ -43,21 +43,76 @@ function debug(message) {
   }
 }
 
-/** One shell segment that records work: commit, push, tag creation or a merge. */
-function isShipSegment(segment) {
-  const s = segment.trim()
-  if (/^gh\s+pr\s+merge\b/.test(s)) return true
-  const git = /^git(?:\s+-C\s+\S+)?\s+(commit|push|merge|tag)\b(.*)$/.exec(s)
-  if (!git) return false
-  if (git[1] !== 'tag') return true
-  // `git tag` alone or `git tag -l` lists tags; creating one names it.
-  const rest = git[2].trim()
-  return rest.length > 0 && !/^(?:-l\b|--list\b)/.test(rest)
+/** Git options that take their value as the next word. */
+const GIT_OPTS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path'])
+
+/** `git tag` flags that list, delete or verify instead of creating a tag. */
+const TAG_NOT_CREATE = /^(?:-d|--delete|-l|--list|-n\d*|-v|--verify|--contains|--no-contains|--merged|--no-merged|--points-at|--sort(?:=.*)?|--column(?:=.*)?|--format(?:=.*)?)$/
+
+/** Words of one shell segment after the env assignments and wrappers in front. */
+function commandWords(segment) {
+  const words = segment.replace(/^[\s(]+/, '').split(/\s+/).filter(Boolean)
+  let i = 0
+  while (i < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]) || words[i] === 'env' || words[i] === 'sudo')) i++
+  return words.slice(i)
 }
 
-function isShipCommand(command) {
+/** One shell segment that records work: commit, push, tag creation or a merge. */
+function isShipSegment(segment) {
+  const words = commandWords(segment)
+  if (words[0] === 'gh') return words[1] === 'pr' && words[2] === 'merge'
+  if (words[0] !== 'git') return false
+  let i = 1
+  while (i < words.length && words[i].startsWith('-')) i += GIT_OPTS_WITH_VALUE.has(words[i]) ? 2 : 1
+  const verb = words[i]
+  const rest = words.slice(i + 1)
+  switch (verb) {
+    case 'commit':
+      return !rest.includes('--dry-run')
+    case 'push':
+      return !rest.includes('--dry-run') && !rest.includes('-n')
+    case 'merge':
+      return !rest.includes('--abort') && !rest.includes('--quit')
+    case 'tag':
+      // `git tag` alone lists; creating one names it, and no list/delete flag is set.
+      return !rest.some((w) => TAG_NOT_CREATE.test(w)) && rest.some((w) => !w.startsWith('-'))
+    default:
+      // `merge-base`, `commit-tree` and the like are different verbs, not these.
+      return false
+  }
+}
+
+/**
+ * Whether a Bash command commits, pushes, tags or merges. Heredoc bodies and
+ * quoted strings are text, not commands, so they are blanked before the split:
+ * a doc written through `cat <<EOF` that mentions `git push` ships nothing. A
+ * quoted string becomes one placeholder word so `git -C "/a b" commit` still
+ * parses.
+ */
+export function isShipCommand(command) {
   if (typeof command !== 'string') return false
-  return command.split(/&&|\|\||;|\||\n/).some(isShipSegment)
+  const plain = command
+    .replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, ' ')
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, ' Q ')
+  return plain.split(/&&|\|\||;|\||\n/).some(isShipSegment)
+}
+
+/** Our own earlier block, as Claude Code feeds it back to the model. */
+function isOwnFeedback(line) {
+  let entry
+  try {
+    entry = JSON.parse(line)
+  } catch {
+    return false
+  }
+  if (!entry || entry.type !== 'user' || entry.isSidechain === true) return false
+  const content = entry.message?.content
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map((block) => (block && typeof block.text === 'string' ? block.text : '')).join('\n')
+      : ''
+  return text.startsWith('Stop hook feedback:') && text.includes(STOP_REASON)
 }
 
 /** The content blocks of a main-thread line of the given type, or `[]`. */
@@ -107,6 +162,9 @@ export function decideStop(lines, { stopHookActive, env = {} }) {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
     if (!line) continue
+    // The session already answered this stretch of work, by writing or by saying
+    // nothing is worth keeping; only work after our last ask counts.
+    if (line.includes('Stop hook feedback') && isOwnFeedback(line)) return verdict(edits, shipped, needEdits)
     if (line.includes('"tool_result"')) for (const id of failedIds(line)) failed.add(id)
     if (!line.includes('"tool_use"')) continue
     const uses = toolUses(line)
