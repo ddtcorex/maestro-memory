@@ -12,9 +12,10 @@ The shared store becomes the memory a Claude Code session actually uses.
 
 - **A `Stop` hook that asks for a write.** When a session made five file edits, or ran a command that
   commits, pushes, tags or merges, since its last `memory_add` or `memory_suggest`, the stop is blocked
-  once with a reason naming those tools. It never writes, never calls a model, never blocks the
+  once with a reason naming those tools. Calls whose result is an error (denied, failed) do not count,
+  and a failed memory write does not discharge the duty. It never writes, never calls a model, never blocks the
   follow-up stop, and stays silent on any error. Plain ESM run with `node` from the plugin directory;
-  43-51 ms on 58-82 MB transcripts. `MAESTRO_MEMORY_STOP_EDITS` and `MAESTRO_MEMORY_STOP_NUDGE=0`
+  50-58 ms on 58-82 MB transcripts. `MAESTRO_MEMORY_STOP_EDITS` and `MAESTRO_MEMORY_STOP_NUDGE=0`
   tune or disable it.
 - **Project memory from ancestor workspaces.** The key and index lanes read the cwd's bucket and every
   ancestor bucket below `$HOME`, nearest first (`projectChain`). A session in a sub-repo now sees the

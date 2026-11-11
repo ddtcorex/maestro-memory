@@ -169,11 +169,13 @@ one that says nothing.
 its work, but text is not enforced, and Claude Code also carries its own file memory, which tends to
 win. At each turn end the hook reads the transcript back to the last `memory_add` or `memory_suggest`
 call (any server prefix). If it finds five file edits (`Edit`, `Write`, `NotebookEdit`) or one command
-that commits, pushes, creates a tag or merges since then, it blocks the stop once with a reason that
+that commits, pushes, creates a tag or merges since then, it blocks the stop once (a call whose result
+is an error, such as a denied `Write` or a `memory_add` to a server that never connected, counts for
+neither side) with a reason that
 names `memory_add` (`target=daily`) and `memory_suggest` (`target=key`); the model may also answer that
 nothing is worth keeping. Claude Code marks the follow-up stop with `stop_hook_active`, and the hook
 never blocks that one, so it cannot loop. It reads at most the last 8 MiB of the transcript, has no
-dependencies, and runs with `node` straight from the plugin directory, skipping `npx`: measured 43-51 ms
+dependencies, and runs with `node` straight from the plugin directory, skipping `npx`: measured 50-58 ms
 on the three largest transcripts on the development machine (58-82 MB). Set
 `MAESTRO_MEMORY_STOP_EDITS` to change the edit threshold, or `MAESTRO_MEMORY_STOP_NUDGE=0` to turn it off.
 
