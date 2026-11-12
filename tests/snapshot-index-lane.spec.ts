@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { MaestroMemoryStore } from '../src/host/memory/store.ts'
-import { renderSnapshotWithStats } from '../src/host/prompt/snapshot.ts'
+import { renderSnapshotWithStats, SNAPSHOT_SECTION_CAPS, SNAPSHOT_SECTION_MAX_ENTRIES } from '../src/host/prompt/snapshot.ts'
+import { HOOK_MAX_BYTES, renderSessionStart } from '../src/host/hook/modes.ts'
+import { projectReferencePath } from '../src/host/storage/layout.ts'
 
 let root: string
 let store: MaestroMemoryStore
@@ -52,7 +54,43 @@ describe('snapshot index lane', () => {
     }
     const text = render()
     const lane = text.split('# Key Memory Index')[1]?.split('\n---')[0] ?? ''
-    expect(Buffer.byteLength(lane, 'utf8')).toBeLessThanOrEqual(1024)
+    expect(Buffer.byteLength(lane, 'utf8')).toBeLessThanOrEqual(SNAPSHOT_SECTION_CAPS.keyIndex + 64)
+  })
+
+  it('lists more entries by summary than the key lane injects in full', () => {
+    for (let i = 0; i < 40; i++) {
+      store.add('key', `rule ${i}: ${'detail '.repeat(60)}`, CWD, { summary: `rule ${i} about a convention that matters for this project` })
+    }
+    const text = render()
+    const keyLane = text.split('# Project Key Memory')[1]?.split('# Key Memory Index')[0] ?? ''
+    const indexLines = (text.split('# Key Memory Index')[1] ?? '').split('\n').filter((l) => l.startsWith('- '))
+    const fullEntries = [...keyLane.matchAll(/\[id:[0-9a-f]{8}\]/g)].length
+    expect(fullEntries).toBeLessThanOrEqual(SNAPSHOT_SECTION_MAX_ENTRIES.key)
+    expect(indexLines.length).toBeGreaterThanOrEqual(20)
+    expect(indexLines.length).toBeGreaterThan(fullEntries * 3)
+  })
+
+  it('takes the index budget from caps.keyIndex', () => {
+    for (let i = 0; i < 40; i++) store.add('key', `entry ${i}`, CWD, { summary: `summary number ${i} padded to a realistic width` })
+    const text = renderSnapshotWithStats(store, { cwd: CWD } as any, { caps: { keyIndex: 300 } }).text
+    const lines = (text.split('# Key Memory Index')[1] ?? '').split('\n').filter((l) => l.startsWith('- '))
+    expect(lines.length).toBeGreaterThan(0)
+    expect(Buffer.byteLength(lines.join('\n'), 'utf8')).toBeLessThanOrEqual(300)
+  })
+
+  it('a worst-case store renders through the hook within budget, note intact', () => {
+    for (let i = 0; i < 10; i++) store.add('memory', `global rule ${i} ${'g'.repeat(500)}`, undefined, { summary: `g${i}` })
+    for (let i = 0; i < 10; i++) store.add('user', `user pref ${i} ${'u'.repeat(500)}`, undefined, { summary: `u${i}` })
+    for (let i = 0; i < 200; i++) store.add('key', `key ${i} ${'k'.repeat(800)}`, CWD, { summary: `key rule ${i} with a summary of realistic length for the index` })
+    for (let i = 0; i < 6; i++) store.add('project', `progress ${i} ${'p'.repeat(700)}`, CWD)
+    store.add('daily', `today ${'d'.repeat(600)}`)
+    const ref = projectReferencePath(root, CWD)
+    mkdirSync(dirname(ref), { recursive: true })
+    writeFileSync(ref, `# Reference\n${'r'.repeat(5000)}`)
+    const text = renderSessionStart({ cwd: CWD }, { root })
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(HOOK_MAX_BYTES)
+    expect(text).not.toContain('cut to stay inside the harness hook limit')
+    expect(text).toContain('# Key Memory Index')
   })
 
   it('renders before the discipline note, which stays last', () => {

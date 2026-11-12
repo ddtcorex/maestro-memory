@@ -81,6 +81,17 @@ describe('claude plugin manifest', () => {
     for (const command of commands) expect(command).toMatch(/^npx -y (?:-p|--package) /)
   })
 
+  it('registers a Stop hook that runs the shipped stop.mjs with node', () => {
+    // The Stop hook reads only the transcript, so it runs from the plugin clone and
+    // skips the npx resolution the store hooks pay; it fires at every turn end.
+    const groups = read('hooks/hooks.json').hooks.Stop
+    expect(Array.isArray(groups)).toBe(true)
+    const command = groups.flatMap((g: any) => g.hooks ?? []).find((h: any) => h.type === 'command')
+    expect(command?.command).toBe('node "${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs"')
+    expect(command?.timeout).toBeLessThanOrEqual(10)
+    expect(existsSync(join(root, 'hooks', 'stop.mjs'))).toBe(true)
+  })
+
   it('declares the hook bin in package.json', () => {
     expect(pkg.bin['maestro-memory-hook']).toBeTruthy()
   })

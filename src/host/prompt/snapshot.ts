@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer'
 import { existsSync, readFileSync } from 'node:fs'
 import type { MaestroMemoryStore } from '../memory/store.ts'
 import { entryHeadPrefix, parseEntrySummary } from '../storage/legacy-format.ts'
-import { projectReferencePath, userMemoryPath } from '../storage/layout.ts'
+import { projectChain, projectReferencePath, userMemoryPath } from '../storage/layout.ts'
 import { appendEntryAtomicSync } from '../storage/atomic-store.ts'
 
 export interface SnapshotContext {
@@ -16,10 +16,31 @@ export interface SnapshotContext {
    * per-achievement cadence instead of the per-turn one.
    */
   isSubagent?: boolean
+  /**
+   * Where the ancestor walk for project memory stops (see `projectChain`).
+   * Defaults to the user's home directory; tests pass their own.
+   */
+  home?: string
+  /**
+   * Who reads the snapshot. `dsh` (the default) has the `memory` and
+   * `maestro_todo` tools; `mcp` is any client of the MCP server (Claude Code,
+   * Codex, Cursor), which has `memory_add` and `memory_suggest` and no todo tool.
+   * Only the closing note differs.
+   */
+  host?: 'dsh' | 'mcp'
 }
 
 /** Default per-section byte budgets for the snapshot prompt. */
-export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 6144, recentDaily: 512, autoRecall: 1024 } as const
+/**
+ * Default per-section byte budgets for the snapshot prompt.
+ *
+ * The project lanes lean on the index: a few key entries in full, and a wide
+ * `keyIndex` lane of `- [id] summary` lines, so a session knows most rules exist
+ * and opens the one it needs with memory_search. Measured on the live store
+ * (2026-11-11): 195 key entries, every one summarized, and the old split (6 KB of
+ * bodies, 768 B of index) showed 5 entries in full and 7 by name.
+ */
+export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 3072, keyIndex: 2560, recentDaily: 512, autoRecall: 1024 } as const
 
 /**
  * Default per-section entry budgets. A byte cap alone lets one huge entry own
@@ -27,14 +48,14 @@ export const SNAPSHOT_SECTION_CAPS = { memory: 2048, user: 4096, key: 6144, rece
  * 2,293-byte global entry consuming a 2,048-byte section while a hard rule sat
  * behind it, never injected.
  */
-export const SNAPSHOT_SECTION_MAX_ENTRIES = { memory: 8, user: 8, key: 12, recentDaily: 2, autoRecall: 4 } as const
+export const SNAPSHOT_SECTION_MAX_ENTRIES = { memory: 8, user: 8, key: 6, recentDaily: 2, autoRecall: 4 } as const
 
 /**
- * Byte budget for the search index lane, shared by the key and project lanes.
- * Small on purpose: the lane exists to say "this exists, search for it", not to
- * carry content. Anything it did not lift stays reachable through memory_search.
+ * Default byte budget for the search index lane; a render overrides it through
+ * `caps.keyIndex`. The lane says "this exists, search for it" and carries no
+ * content; anything it did not lift stays reachable through memory_search.
  */
-export const SNAPSHOT_INDEX_LANE_CAP = 768
+export const SNAPSHOT_INDEX_LANE_CAP: number = SNAPSHOT_SECTION_CAPS.keyIndex
 
 const INDEX_ENTRY_ID_RE = /\[id:\s*([0-9a-f]{8})\]/i
 
@@ -47,6 +68,9 @@ const INDEX_ENTRY_ID_RE = /\[id:\s*([0-9a-f]{8})\]/i
 export function buildIndexLane(all: readonly string[], injected: readonly string[], cap = SNAPSHOT_INDEX_LANE_CAP): string[] {
   if (!all.length) return []
   const shown = new Set(injected)
+  // An entry copied into two buckets keeps its id; list it once, and not at all
+  // when the key lane already shows it in full.
+  const seenIds = new Set(injected.map((entry) => INDEX_ENTRY_ID_RE.exec(entry)?.[1]).filter(Boolean))
   const lines: string[] = []
   let used = 0
   for (let i = all.length - 1; i >= 0; i--) {
@@ -55,6 +79,8 @@ export function buildIndexLane(all: readonly string[], injected: readonly string
     const summary = parseEntrySummary(entry)
     if (!summary) continue
     const id = INDEX_ENTRY_ID_RE.exec(entry)?.[1]
+    if (id && seenIds.has(id)) continue
+    if (id) seenIds.add(id)
     const line = id ? `- [id:${id}] ${summary}` : `- ${summary}`
     const cost = Buffer.byteLength(line, 'utf8') + 1
     if (used + cost > cap) break
@@ -162,6 +188,36 @@ function neutralizePromptBraces(text: string): string {
   return text.replace(/\{{2,}/g, '{').replace(/\}{2,}/g, '}')
 }
 
+/**
+ * Key entries over the bucket chain, in two orders (both newest last, as
+ * `fitSection` and `buildIndexLane` take from the end):
+ * - `byNearest`: farthest bucket first, so the nearest wins the key lane;
+ * - `interleaved`: the buckets' newest entries taken in turn, so the index lane
+ *   lists every bucket and a growing sub-repo cannot hide the workspace.
+ */
+function keyEntriesOverChain(store: MaestroMemoryStore, ctx: SnapshotContext): { byNearest: string[]; interleaved: string[] } {
+  const cwd = ctx.cwd as string
+  const opts = ctx.branch ? { branch: ctx.branch } : {}
+  let chain: string[] = []
+  try {
+    chain = projectChain(store.resolveRoot(), cwd, ctx.home)
+  } catch {
+    chain = []
+  }
+  if (chain.length === 0) {
+    const own = store.list('key', cwd, opts)
+    return { byNearest: own, interleaved: own }
+  }
+  const buckets = chain.map((dir) => store.list('key', dir, opts))
+  const byNearest = [...buckets].reverse().flat()
+  const newestFirst: string[] = []
+  const depth = Math.max(...buckets.map((b) => b.length))
+  for (let k = 1; k <= depth; k++) {
+    for (const bucket of buckets) if (bucket.length >= k) newestFirst.push(bucket[bucket.length - k]!)
+  }
+  return { byNearest, interleaved: newestFirst.reverse() }
+}
+
 /** Per-section cost of one render. */
 export interface SectionStats {
   key: 'memory' | 'user' | 'key' | 'keyIndex' | 'projectContext' | 'reference' | 'recentDaily'
@@ -231,7 +287,12 @@ export function renderSnapshotWithStats(
       }
     } catch {}
   }
-  const keyAll = ctx.cwd ? store.list('key', ctx.cwd, ctx.branch ? { branch: ctx.branch } : {}) : []
+  // Key entries from the cwd's bucket and every ancestor workspace's. The key lane
+  // lets the nearest bucket win; the index lane takes from each bucket in turn. A
+  // cwd with no bucket in its chain keeps its own (empty) list, which renders
+  // exactly as before.
+  const chained = ctx.cwd ? keyEntriesOverChain(store, ctx) : { byNearest: [], interleaved: [] }
+  const keyAll = chained.byNearest
   const key = ctx.cwd
     ? fitSection(keyAll, caps.key, SNAPSHOT_SECTION_MAX_ENTRIES.key)
     : { kept: [], bytes: 0, dropped: 0, truncated: 0 }
@@ -244,10 +305,10 @@ export function renderSnapshotWithStats(
   // This is what makes "I know a rule exists, find it" possible without loading
   // 300 KB of prose; memory_search then opens the one entry that matters.
   if (ctx.cwd) {
-    const lane = buildIndexLane(keyAll, key.kept)
+    const lane = buildIndexLane(chained.interleaved, key.kept, caps.keyIndex)
     if (lane.length) {
       parts.push(`# Key Memory Index (search with memory_search)\n${lane.join('\n')}`)
-      sections.push({ key: 'keyIndex', cap: SNAPSHOT_INDEX_LANE_CAP, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })
+      sections.push({ key: 'keyIndex', cap: caps.keyIndex, bytes: Buffer.byteLength(lane.join('\n'), 'utf8'), entries: lane.length, dropped: Math.max(0, keyAll.length - key.kept.length - lane.length), truncated: 0 })
     }
   }
 
@@ -311,7 +372,9 @@ export function renderSnapshotWithStats(
   // under bulk delegation would flood the tracks.
   const discipline = ctx.isSubagent
     ? SUBAGENT_TURN_END
-    : `---\nEnd of every turn — if this turn produced meaningful progress (code, decisions, learnings, or next steps): 1. Write daily via memory entries (daily in one call, skip if idle/waiting or no new information — never write entries containing only 'Idle' or placeholders). 2. For important project decisions (convention, incident, infra) use memory_suggest target=key with reason, not memory add. 3. Check maestro_todo list only if relevant (bounded, max 8).`
+    : ctx.host === 'mcp'
+      ? MCP_CLIENT_TURN_END
+      : `---\nEnd of every turn — if this turn produced meaningful progress (code, decisions, learnings, or next steps): 1. Write daily via memory entries (daily in one call, skip if idle/waiting or no new information — never write entries containing only 'Idle' or placeholders). 2. For important project decisions (convention, incident, infra) use memory_suggest target=key with reason, not memory add. 3. Check maestro_todo list only if relevant (bounded, max 8).`
   // Defensive: strip any pre-existing discipline entry (should never occur — parts is fresh per call)
   // then append exactly once so the note is guaranteed last even for empty stores or repeated calls.
   const deduped = parts.filter((p) => p !== discipline)
@@ -353,6 +416,15 @@ export function renderSnapshot(
  * intent at the cadence a subagent actually has: one entry per independent
  * achievement, nothing when there is nothing to report.
  */
+/**
+ * Closing note for an MCP client session (the session-start hook and the
+ * `memory_context` tool). It names the tools that client has, and says this is
+ * the session's one memory store: Claude Code also carries its own file memory,
+ * and a note that does not say which store is meant loses to the harness's own.
+ */
+export const MCP_CLIENT_TURN_END = `---
+This is the single memory store for this session, shared with every other agent on the machine. When a turn produced code, a decision or a lesson, call memory_add with target=daily (what changed, the evidence, what is left). For a convention, incident or infra decision, call memory_suggest with target=key and a reason. Skip turns that only answered a question.`
+
 const SUBAGENT_TURN_END = `---
 Turn end (subagent session) — only after completing an independent achievement (a substantive deliverable, a key decision, or a pitfall conclusion), write ONE concise entry with a single memory add; for important conclusions use memory_suggest target=key with reason. Skip entirely when there is no independent achievement — do not write for writing's sake. The per-turn daily cadence applies to human-facing sessions only.`
 

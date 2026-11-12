@@ -4,6 +4,39 @@ All notable changes to this project are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] - 2026-11-11
+
+The shared store becomes the memory a Claude Code session actually uses.
+
+### Added
+
+- **A `Stop` hook that asks for a write.** When a session made five file edits, or ran a command that
+  commits, pushes, tags or merges, since its last `memory_add` or `memory_suggest`, the stop is blocked
+  once with a reason naming those tools. Calls whose result is an error (denied, failed) do not count,
+  and a failed memory write does not discharge the duty. Once the session has answered (by writing, or
+  by saying nothing is worth keeping) it is not asked again until new work happens. Ship commands are
+  parsed by word, so `merge-base`, `--dry-run`, `merge --abort`, tag listing and text inside quotes or
+  heredocs do not count. It never writes, never calls a model, never blocks the
+  follow-up stop, and stays silent on any error. Plain ESM run with `node` from the plugin directory;
+  50-58 ms on 58-82 MB transcripts. `MAESTRO_MEMORY_STOP_EDITS` and `MAESTRO_MEMORY_STOP_NUDGE=0`
+  tune or disable it.
+- **Project memory from ancestor workspaces.** The key and index lanes read the cwd's bucket and every
+  ancestor bucket below `$HOME` (`projectChain`). The key lane lets the nearest bucket win; the index
+  lane takes from each bucket in turn, so a growing sub-repo cannot hide the workspace. A session in a
+  sub-repo now sees the workspace's rules; writes are unchanged.
+- **A closing note for MCP clients** (`MCP_CLIENT_TURN_END`), used by `memory_context` and the
+  session-start hook. It names `memory_add` and `memory_suggest` and drops DSH's `maestro_todo`. DSH
+  keeps its note; the body above the note is unchanged.
+
+### Changed
+
+- **Index before bodies.** Key bodies are capped at 3 KB and 6 entries; the index lane has its own
+  `keyIndex` cap (2560 bytes, 3072 in the hook's tight render). On the development store (195 key
+  entries of about 1 KB each) the session-start hook at the workspace root went from 3 entries in full
+  and 7 by name (7996 bytes) to 1 in full and 31 by name (8582 bytes); in a sub-repo it went from no
+  project memory (3680 bytes) to 1 in full and 31 by name (6375 bytes). All under the 9000 byte budget,
+  none clipped. The trade is fewer bodies for many more names, which `memory_search` opens.
+
 ## [5.2.0] - 2026-11-10
 
 The `key` track stops being unreachable from Claude Code.

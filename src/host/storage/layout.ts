@@ -5,9 +5,9 @@
  */
 
 import { createHash } from 'node:crypto'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 
 /**
  * The DSH home directory: `DSH_HOME` when set and non-blank, else `~/.dsh`.
@@ -134,6 +134,31 @@ export function dailyTodoPath(root: string, date: string): string {
 }
 export function projectDir(root: string, cwd: string): string {
   return join(root, 'projects', projectHash(cwd))
+}
+/**
+ * The project directories whose memory a session in `cwd` reads, nearest first:
+ * the cwd itself, then each ancestor, keeping only those with a bucket.
+ *
+ * A bucket is `sha1(realpath(dir))`, so a session started in a sub-repo of a
+ * workspace would otherwise read an empty bucket while the workspace holds every
+ * rule. The walk stops below `home`: the home directory and anything above it
+ * are never a project, and pulling them in would attach one catch-all bucket to
+ * every session on the machine.
+ */
+export function projectChain(root: string, cwd: string, home: string = homedir()): string[] {
+  if (!cwd) return []
+  const start = normalizeProjectCwd(cwd)
+  const stop = normalizeProjectCwd(home)
+  const chain: string[] = []
+  let dir = start
+  for (;;) {
+    if (dir === stop || stop.startsWith(dir.endsWith(sep) ? dir : dir + sep)) break
+    if (existsSync(projectDir(root, dir))) chain.push(dir)
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return chain
 }
 export function projectMemoryPath(root: string, cwd: string): string {
   return join(projectDir(root, cwd), 'MEMORY.md')
